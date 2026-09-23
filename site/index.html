@@ -1,117 +1,753 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>psyweb 在线打包 · PsychoPy 实验一键变单文件网页</title>
-<style>
-:root{--bg:#f4f5f7;--card:#fff;--line:#e3e6ea;--ink:#1a1a1a;--muted:#6b7280;--ok:#0f8a4a;--warn:#b45309;--bad:#c0392b;--blue:#2f6fed}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.7 system-ui,"Microsoft YaHei",sans-serif}
-.wrap{max-width:900px;margin:0 auto;padding:28px}
-h1{font-size:23px;margin:0 0 6px}
-.sub{color:var(--muted);margin-bottom:20px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:16px}
-#drop{border:2px dashed #c3c9d2;border-radius:12px;padding:34px;text-align:center;color:var(--muted);cursor:pointer;transition:.15s}
-#drop.hot{border-color:var(--blue);background:#eef4ff;color:var(--blue)}
-button{font:inherit;padding:10px 20px;border:0;border-radius:9px;background:var(--blue);color:#fff;cursor:pointer}
-button:disabled{background:#a8b6cd;cursor:not-allowed}
-button.ghost{background:#e8eaee;color:#333}
-input[type=text]{font:inherit;padding:8px 11px;border:1px solid var(--line);border-radius:8px;width:300px}
-label{display:inline-block;min-width:76px;color:var(--muted)}
-#log{max-height:300px;overflow:auto;background:#fbfbfc;border:1px solid var(--line);border-radius:9px;padding:11px;font:12px/1.75 ui-monospace,Consolas,monospace;margin-top:12px;white-space:pre-wrap}
-.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
-.muted{color:var(--muted)}
-code{background:#f0f2f5;padding:1px 5px;border-radius:4px;font-size:13px}
-a{color:var(--blue)}
-.steps{color:var(--muted);font-size:14px}
-.steps b{color:var(--ink)}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>psyweb 在线打包 · PsychoPy 实验一键变单文件网页</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1e2938;
+      --muted: #667386;
+      --line: #e2e7ee;
+      --blue: #2f6fed;
+      --green: #0f8a4a;
+      --amber: #9a5106;
+      --red: #c0392b;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; }
+    body {
+      overflow: hidden;
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.7;
+      letter-spacing: .008em;
+      background:
+        radial-gradient(ellipse at 12% 16%, rgba(250, 252, 255, .96) 0, rgba(250, 252, 255, 0) 27%),
+        radial-gradient(ellipse at 84% 14%, rgba(177, 200, 238, .84) 0, rgba(177, 200, 238, 0) 34%),
+        radial-gradient(ellipse at 80% 86%, rgba(182, 211, 218, .86) 0, rgba(182, 211, 218, 0) 31%),
+        radial-gradient(ellipse at 23% 83%, rgba(212, 198, 230, .56) 0, rgba(212, 198, 230, 0) 28%),
+        linear-gradient(132deg, #b9c9e4 0%, #e4e8f1 48%, #bdcfd9 100%);
+      background-attachment: fixed;
+    }
+
+    button, input { font: inherit; }
+    button, a, input { -webkit-tap-highlight-color: transparent; }
+    button:focus-visible, a:focus-visible, input:focus-visible, [role="button"]:focus-visible {
+      outline: 3px solid rgba(47, 111, 237, .56);
+      outline-offset: 3px;
+    }
+
+    .window {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: min(1320px, calc(100vw - 64px));
+      height: min(790px, calc(100dvh - 64px));
+      transform: translate(-50%, -50%);
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, .78);
+      border-radius: 14px;
+      background: rgba(247, 249, 252, .68);
+      -webkit-backdrop-filter: blur(26px) saturate(145%);
+      backdrop-filter: blur(26px) saturate(145%);
+      box-shadow: 0 32px 82px rgba(31, 48, 78, .22), 0 8px 22px rgba(31, 48, 78, .1), 0 1px 3px rgba(31, 48, 78, .12);
+    }
+    .window-bar {
+      position: relative;
+      flex: 0 0 48px;
+      display: flex;
+      align-items: center;
+      padding: 0 18px;
+      border-bottom: 1px solid #dfe4eb;
+      background: linear-gradient(180deg, rgba(251, 252, 254, .9), rgba(243, 245, 248, .84));
+    }
+    .traffic-lights { display: flex; gap: 8px; align-items: center; }
+    .traffic-lights i {
+      display: block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .1), 0 1px 1px rgba(0, 0, 0, .08);
+    }
+    .traffic-lights i:nth-child(1) { background: #ff6058; }
+    .traffic-lights i:nth-child(2) { background: #ffbd2e; }
+    .traffic-lights i:nth-child(3) { background: #28c840; }
+    .window-title {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #566174;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .035em;
+      white-space: nowrap;
+    }
+    .window-meta {
+      margin-left: auto;
+      color: #667386;
+      font-size: 11px;
+      font-weight: 550;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(0, var(--left-pane-width, 52.5%)) 10px minmax(350px, 1fr);
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 0;
+    }
+    .workbench {
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      background: rgba(248, 250, 252, .84);
+    }
+    .splitter {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      min-width: 10px;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      cursor: col-resize;
+      touch-action: none;
+      user-select: none;
+    }
+    .splitter::before { position: absolute; inset: 0 auto 0 50%; width: 1px; content: ""; background: #dce2ea; transform: translateX(-50%); transition: background .15s ease, width .15s ease; }
+    .splitter::after {
+      position: relative;
+      width: 4px;
+      height: 34px;
+      border-radius: 4px;
+      content: "";
+      background-color: #d8dfe9;
+      background-image: radial-gradient(circle, #78869a 1px, transparent 1.35px);
+      background-position: center 5px;
+      background-size: 4px 7px;
+      box-shadow: 0 1px 3px rgba(31, 48, 78, .15);
+      transition: background-color .15s ease, height .15s ease;
+    }
+    .splitter:hover::before, .splitter:focus-visible::before { width: 2px; background: #8eace1; }
+    .splitter:hover::after, .splitter:focus-visible::after { height: 42px; background-color: #c8d7f2; }
+    .splitter:focus-visible { outline: 2px solid #7da0e0; outline-offset: -1px; }
+    .workspace.is-resizing { cursor: col-resize; user-select: none; }
+    .workspace.is-resizing * { cursor: col-resize !important; user-select: none !important; }
+    .workbench-scroll {
+      height: 100%;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-width: thin;
+      scrollbar-color: #c8d0dc transparent;
+    }
+    .workbench-scroll::-webkit-scrollbar { width: 8px; }
+    .workbench-scroll::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 10px; background: #c8d0dc; background-clip: padding-box; }
+    .workbench-scroll::-webkit-scrollbar-track { background: transparent; }
+    .content-wrap { width: min(100%, 980px); margin: 0 auto; padding: 28px clamp(22px, 3.1vw, 44px) 26px; }
+
+    .product-intro { position: relative; padding: 2px 0 22px; }
+    .intro-topline { display: flex; align-items: center; gap: 9px; margin-bottom: 11px; color: #667386; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    .brand-glyph { display: grid; place-items: center; width: 25px; height: 25px; border-radius: 8px; color: #fff; background: #203758; box-shadow: 0 3px 7px rgba(33, 55, 88, .18); }
+    h1, h2, h3, p { margin-top: 0; }
+    .product-intro h1 { margin: 0 0 6px; color: #182638; font-size: clamp(27px, 2.35vw, 34px); line-height: 1.23; letter-spacing: -.04em; font-weight: 720; }
+    .intro-copy { max-width: 760px; margin: 0; color: #4f5d70; font-size: 14px; line-height: 1.75; }
+    .privacy-line { display: flex; align-items: flex-start; gap: 8px; margin: 9px 0 0; color: #1f6348; font-size: 12.5px; font-weight: 650; line-height: 1.65; }
+    .privacy-line svg { flex: 0 0 16px; margin-top: 3px; }
+    .flow-cue { display: flex; align-items: center; gap: 8px; margin-top: 15px; color: #6b788a; font-size: 11px; }
+    .flow-cue span { padding: 3px 8px; border: 1px solid #e0e6ee; border-radius: 5px; background: #fff; }
+    .flow-cue b { color: #98a4b4; font-weight: 500; }
+
+    .section { margin-top: 20px; }
+    .section-heading { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; color: #26364a; font-size: 16px; line-height: 1.45; letter-spacing: -.015em; font-weight: 700; }
+    .section-heading .eyebrow { color: #6c7b90; font-size: 10px; font-weight: 700; letter-spacing: .09em; }
+    .section-kicker { margin: -5px 0 12px; color: #647286; font-size: 12px; }
+
+    .warning-section {
+      padding: 16px 16px 12px;
+      border: 1px solid #d5a842;
+      border-radius: 11px;
+      background: linear-gradient(115deg, #fff8e8, #fffdf7 78%);
+      box-shadow: 0 2px 5px rgba(140, 97, 20, .055);
+    }
+    .warning-section .section-heading { margin-bottom: 10px; color: #523a0e; }
+    .compare-wrap { overflow: hidden; border: 1px solid #ead9af; border-radius: 7px; background: rgba(255, 255, 255, .78); }
+    .compare-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; line-height: 1.58; }
+    .compare-table th, .compare-table td { padding: 7px 9px; border-bottom: 1px solid #efe7d5; vertical-align: top; overflow-wrap: anywhere; }
+    .compare-table tr:last-child th, .compare-table tr:last-child td { border-bottom: 0; }
+    .compare-table thead th { color: #586276; background: #fbf8f1; font-size: 10.5px; font-weight: 700; text-align: left; }
+    .compare-table thead th:first-child { width: 76px; }
+    .compare-table tbody th { width: 76px; color: #667286; background: rgba(249, 247, 240, .68); font-weight: 650; text-align: left; }
+    .compare-table code { color: #4c5668; font: 10px var(--mono); }
+    .compare-table strong { color: #34445a; font-weight: 700; }
+    .no-tag { color: #a9362c !important; }
+    .yes-tag { color: #167144 !important; }
+
+    .offline-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 13px 18px;
+      align-items: center;
+      padding: 15px 16px;
+      border: 1px solid #d9e3f0;
+      border-radius: 10px;
+      background: #f0f5fb;
+    }
+    .offline-card .section-heading { margin: 0 0 4px; font-size: 14px; }
+    .offline-card p { margin: 0; color: #526176; font-size: 11.5px; line-height: 1.72; }
+    .download-offline {
+      display: inline-flex;
+      min-height: 39px;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 7px 12px;
+      border: 1px solid #c5d2e3;
+      border-radius: 7px;
+      color: #294563;
+      background: #fff;
+      box-shadow: 0 1px 2px rgba(24, 48, 80, .04);
+      font-size: 11px;
+      font-weight: 650;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: border-color .15s ease, background .15s ease, transform .15s ease;
+    }
+    .download-offline:hover { border-color: #8ba8d0; background: #f9fbff; transform: translateY(-1px); }
+    .download-offline svg { flex: 0 0 15px; }
+
+    .steps { display: grid; gap: 8px; }
+    .step-card { display: grid; grid-template-columns: 27px minmax(0, 1fr); gap: 10px; padding: 11px 12px; border: 1px solid #e4e9f0; border-radius: 8px; background: #fff; }
+    .step-number { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: #315986; background: #edf3fa; font-size: 11px; font-weight: 750; }
+    .step-card h3 { margin: 1px 0 3px; color: #2c3a4e; font-size: 12.5px; line-height: 1.5; font-weight: 700; }
+    .step-card p { margin: 0; color: #5d6a7c; font-size: 11.5px; line-height: 1.68; }
+    .step-card code { padding: 1px 3px; border-radius: 3px; color: #45566d; background: #f1f4f8; font: 10px var(--mono); }
+    .psyexp-note { margin: 10px 1px 0; padding-left: 10px; border-left: 2px solid #cbd4df; color: #667386; font-size: 10.5px; line-height: 1.72; }
+
+    .drop-section { padding-top: 2px; }
+    .drop-section .section-heading { margin-bottom: 3px; }
+    .drop-hint { margin: 0 0 11px; color: #647286; font-size: 11px; }
+    #drop {
+      display: flex;
+      min-height: 122px;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 16px 20px;
+      border: 1.5px dashed #aeb9c8;
+      border-radius: 10px;
+      color: #34465d;
+      background: #fbfcfe;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .16s ease, background .16s ease, color .16s ease, box-shadow .16s ease;
+    }
+    #drop:hover { border-color: #7e9dcc; background: #f4f8fd; }
+    #drop.hot { border: 2px dashed #2f6fed; color: #1e5ac3; background: #edf4ff; box-shadow: inset 0 0 0 3px rgba(47, 111, 237, .055); }
+    #drop.selected { border-style: solid; border-color: #82b79b; background: #f2faf5; }
+    #drop svg { margin-bottom: 7px; color: #7f8da1; }
+    #drop.hot svg { color: #2f6fed; }
+    #drop.selected svg { color: #16804b; }
+    .drop-main { margin: 0; font-size: 13px; font-weight: 680; line-height: 1.55; }
+    .drop-sub { margin: 2px 0 0; color: #647286; font-size: 11px; }
+    .drop-actions { display: flex; align-items: center; gap: 11px; margin-top: 10px; }
+    .button-secondary {
+      min-height: 35px;
+      padding: 6px 13px;
+      border: 1px solid #cbd4df;
+      border-radius: 7px;
+      color: #34445a;
+      background: #fff;
+      font-size: 11.5px;
+      font-weight: 650;
+      cursor: pointer;
+      transition: background .15s ease, border-color .15s ease, transform .15s ease;
+    }
+    .button-secondary:hover { border-color: #a7b7cc; background: #f8fafd; transform: translateY(-1px); }
+    .picked-status { min-width: 0; color: #667386; font-size: 11px; }
+    .picked-status .count-emphasis { color: #117144; font-weight: 750; }
+    #dir { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    .drop-state-samples { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-top: 10px; }
+    .drop-sample { min-width: 0; padding: 7px 8px; border: 1px solid #e1e6ed; border-radius: 6px; color: #647186; background: #fff; font-size: 9.5px; line-height: 1.5; }
+    .drop-sample strong { display: block; margin-bottom: 2px; color: #56657a; font-size: 9px; font-weight: 700; }
+    .drop-sample.is-hot { border: 1px dashed #2f6fed; color: #245ebe; background: #edf4ff; }
+    .drop-sample.is-hot strong { color: #1d59bd; }
+    .drop-sample.is-selected { border-color: #a6ceb6; background: #f1faf4; }
+    .drop-sample.is-selected strong { color: #147648; }
+
+    .pack-section { margin-top: 23px; padding: 16px; border: 1px solid #dce3ec; border-radius: 10px; background: #fff; box-shadow: 0 3px 10px rgba(32, 52, 80, .035); }
+    .pack-section .section-heading { margin-bottom: 10px; }
+    .field-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 9px; align-items: center; }
+    .field-row label { color: #47566b; font-size: 11.5px; font-weight: 650; }
+    #title {
+      width: 100%;
+      min-height: 39px;
+      padding: 8px 11px;
+      border: 1px solid #cbd4df;
+      border-radius: 7px;
+      color: #27364a;
+      background: #fff;
+      font-size: 12px;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    #title::placeholder { color: #8a96a7; }
+    #title:focus { border-color: #2f6fed; outline: none; box-shadow: 0 0 0 3px rgba(47, 111, 237, .16); }
+    .pack-actions { display: flex; align-items: center; gap: 12px; margin-top: 11px; }
+    #go {
+      display: inline-flex;
+      min-height: 41px;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 8px 17px;
+      border: 0;
+      border-radius: 7px;
+      color: #fff;
+      background: var(--blue);
+      box-shadow: 0 2px 5px rgba(47, 111, 237, .2);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .14s ease, background .14s ease, box-shadow .14s ease;
+    }
+    #go:not(:disabled):hover { background: #245fda; box-shadow: 0 4px 10px rgba(47, 111, 237, .25); transform: translateY(-1px); }
+    #go:not(:disabled):active { background: #1f55c5; box-shadow: 0 1px 2px rgba(47, 111, 237, .2); transform: translateY(1px); }
+    #go:disabled { color: #e6e8ec; background: #aab2bf; box-shadow: none; cursor: not-allowed; }
+    .size-note { color: #647286; font-size: 10.5px; }
+    .interaction-samples { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin: 9px 0 13px; color: #647286; font-size: 9px; }
+    .mini-button { display: inline-flex; min-height: 24px; align-items: center; padding: 2px 8px; border: 1px solid #d7dee8; border-radius: 5px; color: #66758a; background: #f5f7fa; font-size: 9px; line-height: 1.4; }
+    .mini-button.ready { border-color: #2f6fed; color: #fff; background: #2f6fed; }
+    .mini-button.hovered { border-color: #245fda; color: #fff; background: #245fda; box-shadow: 0 3px 7px rgba(47, 111, 237, .22); }
+    .mini-button.pressed { border-color: #1f55c5; color: #fff; background: #1f55c5; transform: translateY(1px); }
+
+    .log-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 0 7px; color: #425169; font-size: 11px; font-weight: 700; }
+    .log-heading span:last-child { color: #637187; font-size: 9px; font-weight: 550; }
+    .log-shell { overflow: hidden; border: 1px solid #d9e0e9; border-radius: 7px; background: #f4f6f9; }
+    .log-topbar { display: flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-bottom: 1px solid #e1e6ed; background: #eef1f5; }
+    .log-topbar i { width: 6px; height: 6px; border-radius: 50%; background: #c5ccd6; }
+    .log-topbar span { margin-left: 5px; color: #8190a3; font-size: 9px; letter-spacing: .025em; }
+    #log { max-height: 255px; overflow: auto; padding: 9px 10px 10px; color: #435169; font: 10px/1.62 var(--mono); scrollbar-width: thin; scrollbar-color: #c2cad5 transparent; }
+    #log .log-line { display: block; padding: 0 0 1px; white-space: pre-wrap; overflow-wrap: anywhere; animation: line-in .22s ease both; }
+    #log .ok { color: #147344; }
+    #log .warn { color: #9a5b08; }
+    .bad { color: #b9382d; }
+    #log .dim { color: #647286; }
+    @keyframes line-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+    .error-sample { margin-top: 7px; padding: 6px 9px; border: 1px solid #efcbc7; border-radius: 6px; color: #b33329; background: #fff6f5; font: 10px/1.5 var(--mono); }
+    .success-result { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 9px; padding: 10px 11px; border: 1px solid #b9ddc7; border-radius: 7px; background: #f0faf4; }
+    .success-result[hidden] { display: none; }
+    .success-result[hidden] { display: none; }
+    .success-copy { display: flex; align-items: flex-start; gap: 8px; min-width: 0; color: #215d3c; font-size: 10.5px; line-height: 1.5; }
+    .success-copy svg { flex: 0 0 15px; margin-top: 2px; }
+    .success-copy strong { display: block; color: #14683b; font-size: 11px; }
+    .download-result { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; min-height: 32px; padding: 5px 9px; border: 1px solid #a8cfb6; border-radius: 6px; color: #17663b; background: #fff; font-size: 10px; font-weight: 680; text-decoration: none; }
+    .download-result:hover { border-color: #70ae87; background: #fbfffc; }
+
+    .after-section { margin-top: 24px; }
+    .after-list { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+    .after-list li { display: grid; grid-template-columns: 25px minmax(0, 1fr); gap: 9px; align-items: start; color: #556377; font-size: 11.5px; line-height: 1.7; }
+    .after-list b { display: grid; place-items: center; width: 23px; height: 23px; border-radius: 7px; color: #41638d; background: #eaf0f7; font-size: 10px; }
+    .footer { margin-top: 22px; padding: 12px 0 2px; border-top: 1px solid #e1e6ed; color: #667386; font-size: 10px; line-height: 1.6; }
+
+    .preview-pane {
+      display: flex;
+      min-width: 0;
+      min-height: 0;
+      flex-direction: column;
+      padding: 20px 21px 14px;
+      border-left: 1px solid #d9e0e9;
+      color: #263449;
+      background: linear-gradient(145deg, rgba(233, 238, 246, .92), rgba(222, 231, 240, .92));
+    }
+    .preview-header { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; min-height: 27px; margin-bottom: 9px; }
+    .preview-title { display: flex; align-items: center; gap: 8px; color: #45566d; font-size: 11px; font-weight: 650; letter-spacing: .025em; }
+    .preview-title svg { color: #6e7d91; }
+    .preview-badge { padding: 3px 7px; border: 1px solid #d5dde8; border-radius: 5px; color: #647286; background: rgba(255, 255, 255, .72); font-size: 9px; white-space: nowrap; }
+    .preview-stage { position: relative; display: flex; flex: 1 1 auto; align-items: center; justify-content: center; min-height: 0; overflow: hidden; }
+    .preview-stack { width: min(100%, 620px); transform: scale(var(--preview-scale, 1)); transform-origin: center center; }
+    .participant-window { width: 100%; aspect-ratio: 16 / 10; display: flex; flex-direction: column; overflow: hidden; border: 1px solid rgba(255, 255, 255, .82); border-radius: 12px; background: #12141a; box-shadow: 0 20px 42px rgba(34, 49, 70, .2), 0 4px 10px rgba(34, 49, 70, .1); }
+    .participant-titlebar { position: relative; display: grid; flex: 0 0 27px; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 9px; border-bottom: 1px solid #d5d9df; background: linear-gradient(180deg, #fbfcfe, #eff2f6); }
+    .mini-traffic { display: flex; align-items: center; gap: 5px; }
+    .mini-traffic i { width: 8px; height: 8px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .1); }
+    .mini-traffic i:nth-child(1) { background: #ff6058; }
+    .mini-traffic i:nth-child(2) { background: #ffbd2e; }
+    .mini-traffic i:nth-child(3) { background: #28c840; }
+    .participant-window-title { position: absolute; left: 50%; color: #5f6b7c; font-size: 8px; font-weight: 600; transform: translateX(-50%); white-space: nowrap; }
+    .participant-window-meta { justify-self: end; color: #7c8796; font-size: 8px; }
+    .participant-viewport { position: relative; display: flex; flex: 1 1 auto; align-items: center; justify-content: center; min-width: 0; min-height: 0; padding: 6px; overflow: hidden; background: #12141a; }
+    .screen-fit { flex: 0 0 auto; width: min(100%, 620px); transform: scale(var(--screen-scale, 1)); transform-origin: center center; }
+    .participant-screen {
+      display: grid;
+      grid-template-areas: "heading heading" "subtitle subtitle" "checks checks" "consent recovery" "actions actions";
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 5px 7px;
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #2c313c;
+      border-radius: 10px;
+      color: #e8eaef;
+      background: #171a22;
+      box-shadow: 0 9px 22px rgba(0, 0, 0, .24);
+    }
+    .participant-screen h2 { grid-area: heading; margin: 0; color: #f1f3f7; font-size: 22px; font-weight: 720; letter-spacing: -.03em; line-height: 1.2; text-align: center; }
+    .participant-subtitle { grid-area: subtitle; margin: -2px 0 3px; color: #b1b8c4; font-size: 9.5px; line-height: 1.4; text-align: center; }
+    .participant-card { border: 1px solid #2d333e; border-radius: 8px; background: #1d212a; }
+    .checks-card { display: grid; grid-area: checks; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; align-content: start; padding: 3px 9px; }
+    .check-row { display: grid; grid-template-columns: 50px minmax(0, 1fr); gap: 5px; align-items: start; padding: 3px 0; border-bottom: 1px solid #303641; font-size: 9.5px; line-height: 1.36; }
+    .check-row:nth-child(n+3) { border-bottom: 0; }
+    .check-label { color: #a8afbb; font-weight: 620; }
+    .check-text { color: #e1e4ea; }
+    .check-text strong { color: #f2f4f8; font-weight: 700; }
+    .check-text .ready-text { color: #61cc8e; font-weight: 700; }
+    .consent-card { grid-area: consent; min-width: 0; margin: 0; padding: 7px 9px 8px; }
+    .consent-card h3 { margin: 0 0 2px; color: #e9ebf0; font-size: 9.5px; font-weight: 700; }
+    .consent-card p { margin: 0; color: #c2c6cf; font-size: 8.8px; line-height: 1.45; }
+    .consent-card strong { color: #f1f2f5; font-weight: 700; }
+    .recovery-card { grid-area: recovery; min-width: 0; margin: 0; padding: 7px 8px; border: 1px solid #6b5520; border-radius: 8px; color: #e9ddba; background: #2a2416; }
+    .recovery-title { margin: 0 0 2px; color: #f1e3bc; font-size: 9px; font-weight: 650; line-height: 1.4; }
+    .recovery-help { margin: 0 0 5px; color: #cbbd93; font-size: 8px; line-height: 1.4; }
+    .recovery-button { min-height: 22px; padding: 3px 7px; border: 1px solid #665f50; border-radius: 4px; color: #d1cec7; background: #39362f; font-size: 8.2px; font-weight: 550; }
+    .participant-actions { grid-area: actions; margin: 0; text-align: center; }
+    .start-button { display: block; width: 100%; min-height: 31px; border: 0; border-radius: 6px; color: #fff; background: #2f6fed; box-shadow: 0 3px 8px rgba(47, 111, 237, .2); font-size: 12px; font-weight: 720; letter-spacing: .01em; }
+    .participant-note { margin: 3px 0 0; color: #b4bbc6; font-size: 8px; line-height: 1.35; }
+    .webgl-variant {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 2px 11px;
+      align-items: center;
+      margin-top: 9px;
+      padding: 8px 10px;
+      border: 1px solid #57343a;
+      border-radius: 8px;
+      color: #edc8c5;
+      background: #24191d;
+    }
+    .variant-caption { grid-column: 1 / -1; margin: 0 0 1px; color: #bd8989; font-size: 8px; font-weight: 700; letter-spacing: .05em; }
+    .variant-copy { min-width: 0; margin: 0; color: #e88d86; font-size: 9.3px; font-weight: 650; line-height: 1.42; }
+    .variant-help { grid-column: 1 / -1; margin: 0; color: #ccaaa8; font-size: 8.3px; line-height: 1.45; }
+    .start-button.disabled-sample { width: auto; min-height: 26px; padding: 3px 8px; border-radius: 5px; color: #a3a7b0; background: #3a3f4b; box-shadow: none; font-size: 8.5px; cursor: not-allowed; }
+    .preview-foot { flex: 0 0 auto; margin: 7px 0 0; color: #647286; font-size: 8.5px; line-height: 1.4; text-align: center; }
+
+    @media (max-width: 1079px) {
+      body { height: auto; min-height: 100%; overflow-x: hidden; overflow-y: auto; }
+      .window { position: relative; top: auto; left: auto; width: calc(100% - 24px); min-height: calc(100dvh - 24px); height: auto; margin: 12px auto; overflow: hidden; transform: none; }
+      .workspace { display: flex; flex-direction: column; flex: 1 1 auto; overflow: visible; }
+      .splitter { display: none; }
+      .workbench { overflow: visible; }
+      .workbench-scroll { height: auto; overflow: visible; }
+      .content-wrap { padding: 25px clamp(18px, 4vw, 38px) 26px; }
+      .preview-pane { min-height: 760px; border-top: 1px solid #2b3039; border-left: 0; padding: 19px clamp(18px, 4vw, 32px) 15px; }
+      .preview-stage { min-height: 660px; }
+      .preview-stack { max-width: 620px; }
+    }
+    @media (max-width: 620px) {
+      .window { width: calc(100% - 14px); margin: 7px auto; border-radius: 11px; }
+      .window-bar { flex-basis: 43px; padding: 0 12px; }
+      .window-meta { display: none; }
+      .content-wrap { padding: 21px 15px 23px; }
+      .product-intro h1 { font-size: 28px; }
+      .intro-copy { font-size: 13px; }
+      .warning-section { padding: 13px 10px 9px; }
+      .compare-table { font-size: 10px; }
+      .compare-table th, .compare-table td { padding: 6px 6px; }
+      .compare-table thead th:first-child, .compare-table tbody th { width: 54px; }
+      .compare-table thead th { font-size: 9px; }
+      .offline-card { grid-template-columns: minmax(0, 1fr); }
+      .download-offline { justify-self: start; white-space: normal; }
+      .drop-state-samples { grid-template-columns: 1fr; }
+      .pack-actions { align-items: flex-start; flex-direction: column; gap: 5px; }
+      .field-row { grid-template-columns: 1fr; gap: 4px; }
+      .success-result { align-items: flex-start; flex-direction: column; }
+      .preview-pane { min-height: 700px; padding: 16px 12px 13px; }
+      .preview-stage { min-height: 605px; }
+      .check-row { grid-template-columns: 44px minmax(0, 1fr); gap: 4px; font-size: 8.5px; }
+      .participant-screen { gap: 4px 5px; padding: 7px; }
+      .participant-screen h2 { font-size: 19px; }
+      .consent-card { padding: 5px 6px; }
+      .consent-card p { font-size: 8px; }
+      .recovery-card { padding: 5px 6px; }
+      .recovery-help { font-size: 7.4px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+    }
+  </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>psyweb 在线打包</h1>
-  <div class="sub">
-    把 PsychoPy 实验变成 <b>一个 html 文件</b>：被试双击即测，测完用截图或 CSV 把数据发回来。<br>
-    <b>全部在你的浏览器里完成</b>——不上传、不联网、没有服务器参与。
-  </div>
+  <main class="window" aria-label="psyweb 在线打包窗口">
+    <header class="window-bar">
+      <div class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="window-title">psyweb — 在线打包</div>
+      <div class="window-meta">本地浏览器处理</div>
+    </header>
 
-  <div class="card" style="border-color:#f0c36d;background:#fffdf5">
-    <div style="font-weight:700;color:#b45309;margin-bottom:8px">⚠️ 先分清两种 HTML —— 它们不是一回事</div>
-    <table style="width:100%;border-collapse:collapse;font-size:14px">
-      <tr style="color:#6b7280"><th style="text-align:left;padding:4px 6px;border-bottom:1px solid #e3e6ea"></th>
-        <th style="text-align:left;padding:4px 6px;border-bottom:1px solid #e3e6ea">PsychoPy Builder 导出的 HTML</th>
-        <th style="text-align:left;padding:4px 6px;border-bottom:1px solid #e3e6ea">本工具产出的 HTML</th></tr>
-      <tr><td style="padding:4px 6px;color:#6b7280">形态</td>
-        <td style="padding:4px 6px">一堆文件：<code>index.html</code> + <code>xxx.js</code> + <code>lib\</code> + 图片/条件文件</td>
-        <td style="padding:4px 6px"><b>一个</b> <code>.html</code> 文件</td></tr>
-      <tr><td style="padding:4px 6px;color:#6b7280">能直接发被试吗</td>
-        <td style="padding:4px 6px"><b style="color:#c0392b">不能</b><br><span style="font-size:13px">它依赖 Pavlovia 服务器、靠相对路径找运行时库、没有开始页/结果页/数据出口</span></td>
-        <td style="padding:4px 6px"><b style="color:#0f8a4a">能</b><br><span style="font-size:13px">双击即测；被试做完看到结果页，可截图/下载 CSV/二维码回传</span></td></tr>
-      <tr><td style="padding:4px 6px;color:#6b7280">数据去哪</td>
-        <td style="padding:4px 6px">默认上传到 Pavlovia 云端（需要账号与网络）</td>
-        <td style="padding:4px 6px">只留在被试电脑上，由被试发回给你</td></tr>
-      <tr><td style="padding:4px 6px;color:#6b7280">用途</td>
-        <td style="padding:4px 6px">本页的<b>输入</b>（中间产物）</td>
-        <td style="padding:4px 6px">发给被试的<b>最终产物</b></td></tr>
-    </table>
-  </div>
+    <div class="workspace">
+      <section class="workbench" aria-label="研究者操作区">
+        <div class="workbench-scroll">
+          <div class="content-wrap">
+            <header class="product-intro">
+              <div class="intro-topline">
+                <span class="brand-glyph" aria-hidden="true">
+                  <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M3 11.5h2.3l1.5-5 3.1 8 2.2-6 1.5 3H17" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+                <span>PSYWEB / EXPERIMENT PACKAGER</span>
+              </div>
+              <h1>psyweb 在线打包</h1>
+              <p class="intro-copy">把 PsychoPy 实验变成 一个 html 文件：被试双击即测，测完用截图或 CSV 把数据发回来。</p>
+              <p class="privacy-line"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2.6 16 5v4.2c0 3.7-2.4 6.6-6 8.2-3.6-1.6-6-4.5-6-8.2V5l6-2.4Z" stroke="currentColor" stroke-width="1.5"/><path d="m7 9.8 2 2 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>全部在你的浏览器里完成——不上传、不联网、没有服务器参与。</span></p>
+              <div class="flow-cue" aria-label="处理流程"><span>PsychoPy 导出物</span><b>→</b><span>单文件 HTML</span><b>→</b><span>发给被试</span></div>
+            </header>
 
-  <div class="card" id="offlineCard" style="display:none">
-    <div style="font-weight:700;margin-bottom:6px">离线单文件版（对方网络不稳 / 要脱网使用）</div>
-    <div class="muted" style="font-size:13px;margin-bottom:10px">
-      本页需要联网打开。如果你要发给的人网络不稳，或你需要在<b>没有网</b>的电脑上转换，
-      可以下载<b>离线单文件版</b>：一个约 3 MB 的 html，<b>双击即用</b>，功能与本页完全相同
-      （运行时素材已内联，不依赖网络，也不需要安装任何东西）。Windows / macOS / Linux 通用。
+            <section class="section warning-section" aria-labelledby="html-warning-title">
+              <h2 class="section-heading" id="html-warning-title"><span>⚠️ 先分清两种 HTML —— 它们不是一回事</span><span class="eyebrow">先看这里</span></h2>
+              <div class="compare-wrap">
+                <table class="compare-table">
+                  <thead><tr><th scope="col"></th><th scope="col">PsychoPy Builder 导出的 HTML</th><th scope="col">本工具产出的 HTML</th></tr></thead>
+                  <tbody>
+                    <tr><th scope="row">形态</th><td>一堆文件：<code>index.html</code> + <code>xxx.js</code> + <code>lib\</code> + 图片/条件文件</td><td><strong>一个</strong> <code>.html</code> 文件</td></tr>
+                    <tr><th scope="row">能直接发被试吗</th><td><strong class="no-tag">不能</strong> —— 它依赖 Pavlovia 服务器、靠相对路径找运行时库、没有开始页/结果页/数据出口</td><td><strong class="yes-tag">能</strong> —— 双击即测；被试做完看到结果页，可截图/下载 CSV/二维码回传</td></tr>
+                    <tr><th scope="row">数据去哪</th><td>默认上传到 Pavlovia 云端（需要账号与网络）</td><td>只留在被试电脑上，由被试发回给你</td></tr>
+                    <tr><th scope="row">用途</th><td>本页的<strong>输入</strong>（中间产物）</td><td>发给被试的<strong>最终产物</strong></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="section offline-card" id="offlineCard" aria-labelledby="offline-title" style="display:none">
+              <div>
+                <h2 class="section-heading" id="offline-title">离线单文件版（对方网络不稳 / 要脱网使用）</h2>
+                <p>本页需要联网打开。如果你要发给的人网络不稳，或你需要在没有网的电脑上转换，可以下载离线单文件版：一个约 3 MB 的 html，双击即用，功能与本页完全相同（运行时素材已内联，不依赖网络，也不需要安装任何东西）。Windows / macOS / Linux 通用。</p>
+              </div>
+              <a class="download-offline" id="offlineLink" href="#offlineCard">
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3v9m0 0 3.4-3.4M10 12 6.6 8.6M4 14v2h12v-2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>⬇ 下载离线单文件版（psyweb打包工具.html）</span>
+              </a>
+            </section>
+
+            <section class="section" aria-labelledby="steps-title">
+              <h2 class="section-heading" id="steps-title"><span class="eyebrow">01 — 03</span><span>三步</span></h2>
+              <div class="steps">
+                <article class="step-card">
+                  <span class="step-number">1</span>
+                  <div><h3>① 在 PsychoPy Builder 里导出</h3><p>菜单 <code>File → Export HTML…</code>（或往 Pavlovia 同步一次），得到一个含 <code>index.html</code>、<code>xxx.js</code>、<code>lib\</code>、图片与条件文件的文件夹。</p></div>
+                </article>
+                <article class="step-card">
+                  <span class="step-number">2</span>
+                  <div><h3>② 把那个文件夹整个拖到这里</h3><p>（下面虚线框）</p></div>
+                </article>
+                <article class="step-card">
+                  <span class="step-number">3</span>
+                  <div><h3>③ 下载生成的单个 html，发给被试即可。</h3></div>
+                </article>
+              </div>
+              <p class="psyexp-note">注：本页不处理 .psyexp —— 把 .psyexp 编译成 .js 的是 PsychoPy 本体（Python 程序），它的依赖里有 wx、pyglet 等原生桌面库，浏览器里跑不起来（实测：编译链上有 158 个模块）。想"直接拖 .psyexp 一步到位"，请用随包的本地工具或免安装分发包 —— 它们在你自己电脑上调用已装的 PsychoPy。</p>
+            </section>
+
+            <section class="section drop-section" aria-labelledby="drop-title">
+              <h2 class="section-heading" id="drop-title"><span class="eyebrow">第 1 步</span><span>选择 PsychoPy 导出文件夹</span></h2>
+              <p class="drop-hint">整个文件夹会在本机浏览器中读取；原始文件不会上传。</p>
+              <div id="drop" role="button" tabindex="0" aria-describedby="drop-instruction">
+                <svg width="27" height="27" viewBox="0 0 28 28" fill="none" aria-hidden="true"><path d="M14 18V5m0 0L9.5 9.5M14 5l4.5 4.5M5 17.5v4A1.5 1.5 0 0 0 6.5 23h15a1.5 1.5 0 0 0 1.5-1.5v-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <p class="drop-main">把 Export HTML 生成的整个文件夹 拖到这里</p>
+                <p class="drop-sub" id="drop-instruction">（或点下面的按钮选择文件夹）</p>
+              </div>
+              <input id="dir" type="file" webkitdirectory directory multiple aria-label="选择 PsychoPy 导出文件夹">
+              <div class="drop-actions">
+                <button class="button-secondary" id="pickDir" type="button">选择文件夹</button>
+                <span class="picked-status" id="picked" aria-live="polite">尚未选择文件</span>
+              </div>
+              
+
+            <section class="section pack-section" aria-labelledby="pack-title">
+              <h2 class="section-heading" id="pack-title"><span class="eyebrow">第 2 步</span><span>生成被试可直接打开的文件</span></h2>
+              <div class="field-row">
+                <label for="title">实验标题</label>
+                <input id="title" type="text" placeholder="会显示在被试看到的开始页上" autocomplete="off">
+              </div>
+              <div class="pack-actions">
+                <button id="go" type="button" disabled>打包成单文件</button>
+                <span class="size-note">产物大小约 3–4 MB</span>
+              </div>
+                            <div class="log-heading"><span>处理日志</span><span>打包后在此逐行显示本机处理进度</span></div>
+              <div class="log-shell">
+                <div class="log-topbar" aria-hidden="true"><i></i><i></i><i></i><span>psyweb · packager</span></div>
+                <div id="log" role="log" aria-live="polite" aria-label="打包处理日志"></div>
+              </div>
+                            <div class="success-result" id="successResult" hidden>
+                <div class="success-copy"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.5"/><path d="m6 10.2 2.5 2.4 5.4-5.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span><strong>打包完成</strong>单文件已生成，可以交给被试。</span></div>
+                <a class="download-result" id="resultLink" href="#result"><span>⬇</span><span>下载 experiment_便携包.html</span></a>
+              </div>
+            </section>
+
+            <section class="section after-section" aria-labelledby="after-title">
+              <h2 class="section-heading" id="after-title"><span class="eyebrow">第 3 步</span><span>打包好之后</span></h2>
+              <ol class="after-list">
+                <li><b>1</b><span>① 把 html 发给被试（电脑上双击打开；手机和平板做不了）</span></li>
+                <li><b>2</b><span>② 被试做完 → 结果页给出「结果摘要截图 / 下载 CSV / 数据二维码」</span></li>
+                <li><b>3</b><span>③ 对方把截图或 CSV 发回 → 用数据回收器（collector.html）拖进去还原成表格</span></li>
+              </ol>
+            </section>
+
+            <footer class="footer">psyweb · 在线打包使用 MIT 许可的 PsychoJS 运行时 · 本页不收集任何数据</footer>
+          </div>
+        </div>
+      </section>
+
+      <div class="splitter" id="splitter" role="separator" tabindex="0" aria-orientation="vertical" aria-label="拖动调整操作区与预览区宽度" aria-valuemin="50" aria-valuemax="62" aria-valuenow="53" title="拖动调整两栏宽度"></div>
+      <aside class="preview-pane" aria-label="被试视角预览">
+        <div class="preview-header">
+          <div class="preview-title"><svg width="15" height="15" viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="2" y="2.5" width="14" height="10" rx="1.6" stroke="currentColor" stroke-width="1.3"/><path d="M6 15.5h6M9 12.5v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg><span>被试双击后看到 · 开始页</span></div>
+          <span class="preview-badge">页面预览</span>
+        </div>
+        <div class="preview-stage" id="previewStage">
+          <div class="preview-stack" id="previewStack">
+            <div class="participant-window" aria-label="被试电脑中的实验开始页窗口">
+              <div class="participant-titlebar" aria-hidden="true">
+                <span class="mini-traffic"><i></i><i></i><i></i></span>
+                <span class="participant-window-title">experiment.html — 预览</span>
+                <span class="participant-window-meta">HTML</span>
+              </div>
+              <div class="participant-viewport" id="participantViewport">
+                <div class="screen-fit" id="screenFit">
+            <article class="participant-screen" aria-label="被试实验开始页示例">
+              <h2>选择实验</h2>
+              <p class="participant-subtitle">开始前请确认下面几件事</p>
+              <div class="participant-card checks-card">
+                <div class="check-row"><span class="check-label">设备</span><span class="check-text">请用<strong>电脑</strong>完成（本实验需要键盘/鼠标；手机和平板无法完成）</span></div>
+                <div class="check-row"><span class="check-label">环境</span><span class="check-text">安静、不被打扰；建议戴上耳机</span></div>
+                <div class="check-row"><span class="check-label">显示</span><span class="check-text">点击开始后会进入<strong>全屏</strong>，中途请不要切换窗口</span></div>
+                <div class="check-row"><span class="check-label">显示引擎</span><span class="check-text"><span class="ready-text">已检测到 WebGL，可以开始</span></span></div>
+              </div>
+              <section class="participant-card consent-card">
+                <h3>知情同意</h3>
+                <p>本实验仅用于学术研究，<strong>不收集姓名等可识别身份的信息</strong>；你的作答数据会以匿名编号形式记录，仅保存在实验者本地。参与完全<strong>自愿</strong>，你可以在任何时刻关闭页面退出，不会有任何不利后果。点击「开始」即表示你已理解并同意参与。</p>
+              </section>
+              <section class="recovery-card">
+                <p class="recovery-title">发现上次运行留下的数据（11 行，2026/9/24 00:31:08）。</p>
+                <p class="recovery-help">如果那次是正常做完并已经导出过的，可以直接忽略；如果中途异常退出（关页面/崩溃），可点下面下载。</p>
+                <button class="recovery-button" type="button">下载上次的数据</button>
+              </section>
+              <div class="participant-actions">
+                <button class="start-button" type="button">▶ 点击开始</button>
+                <p class="participant-note">开始后请不要刷新或关闭页面；数据会在结束时自动导出。</p>
+              </div>
+            </article>
+                </div>
+              </div>
+            </div>
+            <aside class="webgl-variant" aria-label="WebGL 不可用时被试看到的样子">
+              <p class="variant-caption">显示引擎 · 检测失败时被试看到的样子</p>
+              <p class="variant-copy">未检测到 WebGL，本实验无法运行</p>
+              <button class="start-button disabled-sample" type="button" disabled>▶ 点击开始</button>
+              <p class="variant-help">请换用较新的 Chrome / Edge；若已是最新版本，请在浏览器设置里打开「使用硬件加速」后重启浏览器。</p>
+            </aside>
+          </div>
+        </div>
+        <p class="preview-foot">静态预览 · 被试无法在此区域操作</p>
+      </aside>
     </div>
-    <a id="offlineLink" href="./offline.html" download="psyweb打包工具.html"
-       style="display:inline-block;padding:9px 18px;border-radius:9px;background:var(--blue);color:#fff;text-decoration:none">
-      ⬇ 下载离线单文件版（psyweb打包工具.html）
-    </a>
-  </div>
+  </main>
 
-  <div class="card steps">
-    <div style="font-weight:700;color:var(--ink);margin-bottom:8px">三步</div>
-    <b>① 在 PsychoPy Builder 里导出</b>：菜单 <code>File → Export HTML…</code>（或往 Pavlovia 同步一次），得到一个含 <code>index.html</code>、<code>xxx.js</code>、<code>lib\</code>、图片与条件文件的文件夹。<br>
-    <b>② 把那个文件夹整个拖到这里</b>（下面虚线框）。<br>
-    <b>③ 下载生成的单个 html</b>，发给被试即可。
-    <div class="muted" style="margin-top:8px;font-size:13px">
-      注：本页不处理 <code>.psyexp</code> —— 把 .psyexp 编译成 <code>.js</code> 的是 PsychoPy 本体（Python 程序），
-      它的依赖里有 wx、pyglet 等<b>原生桌面库</b>，浏览器里跑不起来（实测：编译链上有 158 个模块）。
-      想"直接拖 .psyexp 一步到位"，请用随包的本地工具或免安装分发包 —— 它们在<b>你自己电脑上</b>调用已装的 PsychoPy。
-    </div>
-  </div>
-
-  <div class="card">
-    <div id="drop">把 <b>Export HTML 生成的整个文件夹</b> 拖到这里<br>
-      <span style="font-size:13px">（或点下面的按钮选择文件夹）</span></div>
-    <input id="dir" type="file" webkitdirectory multiple style="display:none">
-    <div style="margin-top:12px">
-      <button class="ghost" id="pickDir">选择文件夹</button>
-      <span class="muted" id="picked" style="margin-left:10px">尚未选择文件</span>
-    </div>
-  </div>
-
-  <div class="card">
-    <div style="margin-bottom:12px"><label>实验标题</label><input id="title" type="text" placeholder="会显示在被试看到的开始页上"></div>
-    <button id="go" disabled>打包成单文件</button>
-    <span class="muted" style="margin-left:10px">产物大小约 3–4 MB</span>
-    <div id="log"></div>
-  </div>
-
-  <div class="card steps">
-    <div style="font-weight:700;color:var(--ink);margin-bottom:6px">打包好之后</div>
-    ① 把 html 发给被试（<b>电脑上</b>双击打开；手机和平板做不了）<br>
-    ② 被试做完 → 结果页给出「结果摘要截图 / 下载 CSV / 数据二维码」<br>
-    ③ 对方把截图或 CSV 发回 → 用数据回收器（<code>tools/collector.html</code>）拖进去还原成表格
-  </div>
-
-  <div class="muted" style="font-size:13px">
-    psyweb · 在线打包使用 MIT 许可的 PsychoJS 运行时 · 本页不收集任何数据
-  </div>
-</div>
 
 <script src="./pack-core.js"></script>
+<script>
+(function () {
+  'use strict';
+  /* 以下三块**原样取自设计稿**，未做改动 —— 它们是真机关，不是样稿：
+     · 分栏拖拽（#splitter，含键盘左右键调整）
+     · 预览等比缩放（fitPreview / fitParticipantPage + ResizeObserver）
+     实测：1440x900 视口下 --preview-scale=0.993，预览完整落在预览区内，无溢出。 */
+  const stage = document.getElementById('previewStage');
+      const stack = document.getElementById('previewStack');
+      const participantViewport = document.getElementById('participantViewport');
+      const screenFit = document.getElementById('screenFit');
+      const workspace = document.querySelector('.workspace');
+      const splitter = document.getElementById('splitter');
+      function setSplit(clientX) {
+        const rect = workspace.getBoundingClientRect();
+        const dividerWidth = splitter.getBoundingClientRect().width;
+        const minLeft = Math.max(480, rect.width * .50);
+        const maxLeft = Math.min(rect.width * .62, rect.width - dividerWidth - 350);
+        const left = Math.max(minLeft, Math.min(maxLeft, clientX - rect.left - dividerWidth / 2));
+        const percent = left / rect.width * 100;
+        workspace.style.setProperty('--left-pane-width', `${percent}%`);
+        splitter.setAttribute('aria-valuenow', String(Math.round(percent)));
+        splitter.setAttribute('aria-valuetext', `${Math.round(percent)}% 操作区`);
+      }
+
+      splitter.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        resizing = true;
+        workspace.classList.add('is-resizing');
+        splitter.setPointerCapture(event.pointerId);
+        setSplit(event.clientX);
+      });
+      splitter.addEventListener('pointermove', (event) => {
+        if (resizing) setSplit(event.clientX);
+      });
+      function stopResizing() {
+        resizing = false;
+        workspace.classList.remove('is-resizing');
+      }
+      splitter.addEventListener('pointerup', stopResizing);
+      splitter.addEventListener('pointercancel', stopResizing);
+      splitter.addEventListener('keydown', (event) => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        const rect = workspace.getBoundingClientRect();
+        const dividerWidth = splitter.getBoundingClientRect().width;
+        const current = parseFloat(workspace.style.getPropertyValue('--left-pane-width')) || 52.5;
+        const step = event.shiftKey ? 2 : 1;
+        const next = current + (event.key === 'ArrowRight' ? step : -step);
+        const min = Math.max(480, rect.width * .50) / rect.width * 100;
+        const max = Math.min(rect.width * .62, rect.width - dividerWidth - 350) / rect.width * 100;
+        const value = Math.max(min, Math.min(max, next));
+        workspace.style.setProperty('--left-pane-width', `${value}%`);
+        splitter.setAttribute('aria-valuenow', String(Math.round(value)));
+        splitter.setAttribute('aria-valuetext', `${Math.round(value)}% 操作区`);
+      });
+
+      function fitPreview() {
+        if (!stage || !stack) return;
+        stack.style.setProperty('--preview-scale', '1');
+        const availableHeight = stage.clientHeight;
+        const naturalHeight = stack.offsetHeight;
+        const availableWidth = stage.clientWidth;
+        const naturalWidth = stack.offsetWidth;
+        const scale = Math.min(1, (availableHeight - 4) / naturalHeight, (availableWidth - 4) / naturalWidth);
+        stack.style.setProperty('--preview-scale', String(Math.max(.6, scale)));
+      }
+      function fitParticipantPage() {
+        if (!participantViewport || !screenFit) return;
+        screenFit.style.setProperty('--screen-scale', '1');
+        const availableHeight = participantViewport.clientHeight - 2;
+        const availableWidth = participantViewport.clientWidth - 2;
+        const naturalHeight = screenFit.offsetHeight;
+        const naturalWidth = screenFit.offsetWidth;
+        const scale = Math.min(1, availableHeight / naturalHeight, availableWidth / naturalWidth);
+        screenFit.style.setProperty('--screen-scale', String(Math.max(.55, scale)));
+      }
+      if ('ResizeObserver' in window) new ResizeObserver(fitPreview).observe(stage);
+      if ('ResizeObserver' in window) new ResizeObserver(fitParticipantPage).observe(participantViewport);
+      window.addEventListener('resize', () => { fitPreview(); fitParticipantPage(); }, { passive: true });
+      window.addEventListener('load', () => { fitPreview(); fitParticipantPage(); }, { once: true });
+      requestAnimationFrame(fitPreview);
+      requestAnimationFrame(fitParticipantPage);
+    })();
+</script>
 <script>
 (function () {
   'use strict';
@@ -128,7 +764,7 @@ a{color:var(--blue)}
   };
   var picked = [];
   var $ = function (id) { return document.getElementById(id); };
-  function log(s, cls) { var d = $('log'), n = document.createElement('div'); n.className = cls || ''; n.textContent = s; d.appendChild(n); d.scrollTop = d.scrollHeight; }
+  function log(s, cls) { var d = $('log'), n = document.createElement('span'); n.className = ('log-line ' + (cls || '')).trim(); n.textContent = s; d.appendChild(n); d.scrollTop = d.scrollHeight; }
 
   // 素材加载：两种模式
   //   ① 托管模式（http）：同源 fetch
@@ -216,6 +852,7 @@ a{color:var(--blue)}
 
   $('go').onclick = async function () {
     var btn = this; btn.disabled = true;
+    var sres0 = $('successResult'); if (sres0) sres0.hidden = true;
     try {
       var c = classify(picked);
       if (!c.keep.length) throw new Error('没有可处理的文件');
@@ -233,10 +870,19 @@ a{color:var(--blue)}
 
       var blob = new Blob([res.html], { type: 'text/html;charset=utf-8' });
       var name = (res.meta.expName || 'experiment') + '_便携包.html';
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(blob); a.download = name; a.textContent = '⬇ 点击下载 ' + name + '（' + (blob.size / 1048576).toFixed(2) + ' MB）';
-      $('log').appendChild(a);
-      $('log').appendChild(document.createElement('br'));
+      // 完成态：用设计稿的 #successResult + #resultLink，比"往日志里塞个链接"清楚得多
+      var link = $('resultLink');
+      if (link) {
+        if (link.dataset.url) { try { URL.revokeObjectURL(link.dataset.url); } catch (e) {} }
+        var url = URL.createObjectURL(blob);
+        link.dataset.url = url;
+        link.href = url;
+        link.download = name;
+        var label = link.querySelector('span:last-child');
+        if (label) label.textContent = '下载 ' + name;
+        var sres = $('successResult');
+        if (sres) sres.hidden = false;
+      }
       log('✅ 完成。把这个文件发给被试即可。', 'ok');
       // 供自动化测试读取
       window.__SITE_TEST__ = {
