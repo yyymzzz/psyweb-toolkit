@@ -1,0 +1,15 @@
+{
+  "name": "psyweb-toolkit",
+  "version": "0.0.1",
+  "private": false,
+  "description": "把 PsychoPy 实验(.psyexp)打包成零服务器单文件 HTML 便携实验包：被试双击即测，数据经截图/CSV/二维码三通道回传",
+  "license": "MIT",
+  "scripts": {
+    "vendor:verify": "pwsh -NoProfile -File scripts/fetch-vendor.ps1 -VerifyOnly",
+    "vendor:lock": "pwsh -NoProfile -File scripts/make-vendor-lock.ps1"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^5.11.1",
+    "qrcode-generator": "^2.0.4"
+  }
+}

@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>psyweb 在线打包 · PsychoPy 实验一键变单文件网页</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--line:#e3e6ea;--ink:#1a1a1a;--muted:#6b7280;--ok:#0f8a4a;--warn:#b45309;--bad:#c0392b;--blue:#2f6fed}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.7 system-ui,"Microsoft YaHei",sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:28px}
+h1{font-size:23px;margin:0 0 6px}
+.sub{color:var(--muted);margin-bottom:20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:16px}
+#drop{border:2px dashed #c3c9d2;border-radius:12px;padding:34px;text-align:center;color:var(--muted);cursor:pointer;transition:.15s}
+#drop.hot{border-color:var(--blue);background:#eef4ff;color:var(--blue)}
+button{font:inherit;padding:10px 20px;border:0;border-radius:9px;background:var(--blue);color:#fff;cursor:pointer}
+button:disabled{background:#a8b6cd;cursor:not-allowed}
+button.ghost{background:#e8eaee;color:#333}
+input[type=text]{font:inherit;padding:8px 11px;border:1px solid var(--line);border-radius:8px;width:300px}
+label{display:inline-block;min-width:76px;color:var(--muted)}
+#log{max-height:300px;overflow:auto;background:#fbfbfc;border:1px solid var(--line);border-radius:9px;padding:11px;font:12px/1.75 ui-monospace,Consolas,monospace;margin-top:12px;white-space:pre-wrap}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.muted{color:var(--muted)}
+code{background:#f0f2f5;padding:1px 5px;border-radius:4px;font-size:13px}
+a{color:var(--blue)}
+.steps{color:var(--muted);font-size:14px}
+.steps b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>psyweb 在线打包</h1>
+  <div class="sub">
+    把 PsychoPy 实验变成 <b>一个 html 文件</b>：被试双击即测，测完用截图或 CSV 把数据发回来。<br>
+    <b>全部在你的浏览器里完成</b>——不上传、不联网、没有服务器参与。
+  </div>
+
+  <div class="card" style="border-color:#f0c36d;background:#fffdf5">
+    <div style="font-weight:700;color:#b45309;margin-bottom:8px">⚠️ 先分清两种 HTML —— 它们不是一回事</div>
+    <table style="width:100%;border-collapse:collapse;font-size:14px">
+      <tr style="color:#6b7280"><th style="text-align:left;padding:4px 6px;border-bottom:1px solid #e3e6ea"></th>
+        <th style="text-align:left;padding:4px 6px;border-bottom:1px solid #e3e6ea">PsychoPy Builder 导出的 HTML</th>
+        <th style="text-align:left;padding:4px 6px;border-bottom:1px solid #e3e6ea">本工具产出的 HTML</th></tr>
+      <tr><td style="padding:4px 6px;color:#6b7280">形态</td>
+        <td style="padding:4px 6px">一堆文件：<code>index.html</code> + <code>xxx.js</code> + <code>lib\</code> + 图片/条件文件</td>
+        <td style="padding:4px 6px"><b>一个</b> <code>.html</code> 文件</td></tr>
+      <tr><td style="padding:4px 6px;color:#6b7280">能直接发被试吗</td>
+        <td style="padding:4px 6px"><b style="color:#c0392b">不能</b><br><span style="font-size:13px">它依赖 Pavlovia 服务器、靠相对路径找运行时库、没有开始页/结果页/数据出口</span></td>
+        <td style="padding:4px 6px"><b style="color:#0f8a4a">能</b><br><span style="font-size:13px">双击即测；被试做完看到结果页，可截图/下载 CSV/二维码回传</span></td></tr>
+      <tr><td style="padding:4px 6px;color:#6b7280">数据去哪</td>
+        <td style="padding:4px 6px">默认上传到 Pavlovia 云端（需要账号与网络）</td>
+        <td style="padding:4px 6px">只留在被试电脑上，由被试发回给你</td></tr>
+      <tr><td style="padding:4px 6px;color:#6b7280">用途</td>
+        <td style="padding:4px 6px">本页的<b>输入</b>（中间产物）</td>
+        <td style="padding:4px 6px">发给被试的<b>最终产物</b></td></tr>
+    </table>
+  </div>
+
+  <div class="card" id="offlineCard" style="display:none">
+    <div style="font-weight:700;margin-bottom:6px">离线单文件版（对方网络不稳 / 要脱网使用）</div>
+    <div class="muted" style="font-size:13px;margin-bottom:10px">
+      本页需要联网打开。如果你要发给的人网络不稳，或你需要在<b>没有网</b>的电脑上转换，
+      可以下载<b>离线单文件版</b>：一个约 3 MB 的 html，<b>双击即用</b>，功能与本页完全相同
+      （运行时素材已内联，不依赖网络，也不需要安装任何东西）。Windows / macOS / Linux 通用。
+    </div>
+    <a id="offlineLink" href="./offline.html" download="psyweb打包工具.html"
+       style="display:inline-block;padding:9px 18px;border-radius:9px;background:var(--blue);color:#fff;text-decoration:none">
+      ⬇ 下载离线单文件版（psyweb打包工具.html）
+    </a>
+  </div>
+
+  <div class="card steps">
+    <div style="font-weight:700;color:var(--ink);margin-bottom:8px">三步</div>
+    <b>① 在 PsychoPy Builder 里导出</b>：菜单 <code>File → Export HTML…</code>（或往 Pavlovia 同步一次），得到一个含 <code>index.html</code>、<code>xxx.js</code>、<code>lib\</code>、图片与条件文件的文件夹。<br>
+    <b>② 把那个文件夹整个拖到这里</b>（下面虚线框）。<br>
+    <b>③ 下载生成的单个 html</b>，发给被试即可。
+    <div class="muted" style="margin-top:8px;font-size:13px">
+      注：本页不处理 <code>.psyexp</code> —— 把 .psyexp 编译成 <code>.js</code> 的是 PsychoPy 本体（Python 程序），
+      它的依赖里有 wx、pyglet 等<b>原生桌面库</b>，浏览器里跑不起来（实测：编译链上有 158 个模块）。
+      想"直接拖 .psyexp 一步到位"，请用随包的本地工具或免安装分发包 —— 它们在<b>你自己电脑上</b>调用已装的 PsychoPy。
+    </div>
+  </div>
+
+  <div class="card">
+    <div id="drop">把 <b>Export HTML 生成的整个文件夹</b> 拖到这里<br>
+      <span style="font-size:13px">（或点下面的按钮选择文件夹）</span></div>
+    <input id="dir" type="file" webkitdirectory multiple style="display:none">
+    <div style="margin-top:12px">
+      <button class="ghost" id="pickDir">选择文件夹</button>
+      <span class="muted" id="picked" style="margin-left:10px">尚未选择文件</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="margin-bottom:12px"><label>实验标题</label><input id="title" type="text" placeholder="会显示在被试看到的开始页上"></div>
+    <button id="go" disabled>打包成单文件</button>
+    <span class="muted" style="margin-left:10px">产物大小约 3–4 MB</span>
+    <div id="log"></div>
+  </div>
+
+  <div class="card steps">
+    <div style="font-weight:700;color:var(--ink);margin-bottom:6px">打包好之后</div>
+    ① 把 html 发给被试（<b>电脑上</b>双击打开；手机和平板做不了）<br>
+    ② 被试做完 → 结果页给出「结果摘要截图 / 下载 CSV / 数据二维码」<br>
+    ③ 对方把截图或 CSV 发回 → 用数据回收器（<code>tools/collector.html</code>）拖进去还原成表格
+  </div>
+
+  <div class="muted" style="font-size:13px">
+    psyweb · 在线打包使用 MIT 许可的 PsychoJS 运行时 · 本页不收集任何数据
+  </div>
+</div>
+
+<script src="./pack-core.js"></script>
+<script>
+(function () {
+  'use strict';
+  var ASSETS = {
+    psychoJs: './assets/psychojs-2026.2.3.iife.js',
+    css: './assets/psychojs-2026.2.3.css',
+    jquery: './assets/jquery-3.6.0.min.js',
+    jqueryUi: './assets/jquery-ui-1.12.1.min.js',
+    jqueryUiCss: './assets/jquery-ui-1.12.1.min.css',
+    preload: './assets/preloadjs-1.0.1.min.js',
+    pako: './assets/pako.min.js',
+    qrcode: './assets/qrcode.js',
+    shim: './assets/psyweb-shim-2026.js'
+  };
+  var picked = [];
+  var $ = function (id) { return document.getElementById(id); };
+  function log(s, cls) { var d = $('log'), n = document.createElement('div'); n.className = cls || ''; n.textContent = s; d.appendChild(n); d.scrollTop = d.scrollHeight; }
+
+  // 素材加载：两种模式
+  //   ① 托管模式（http）：同源 fetch
+  //   ② 单文件离线模式：构建时把素材内联成 window.PSYWEB_ASSETS（双击本地 html 也能用）
+  async function loadAssets() {
+    if (window.PSYWEB_ASSETS) { log('使用内联素材（离线单文件版）'); return window.PSYWEB_ASSETS; }
+    log('加载运行时素材（约 3 MB，首次稍慢）…');
+    var out = {};
+    for (var k in ASSETS) {
+      var r = await fetch(ASSETS[k]);
+      if (!r.ok) throw new Error('素材加载失败: ' + ASSETS[k] + ' (HTTP ' + r.status + ')');
+      out[k] = await r.text();
+    }
+    return out;
+  }
+
+  function classify(list) {
+    var keep = [], skip = 0;
+    list.forEach(function (f) {
+      var rel = f.relPath || f.name;
+      if (/(^|\/)(data|__pycache__|node_modules|\.git|实验截图|_调试残留)(\/|$)/i.test(rel)) { skip++; return; }
+      if (/\.(py|cmd|bat|md|psyexp|pdf|docx?|pptx?|zip|rar|7z)$/i.test(f.name)) { skip++; return; }
+      keep.push(f);
+    });
+    return { keep: keep, skip: skip };
+  }
+  function setPicked(files) {
+    picked = Array.prototype.slice.call(files);
+    var c = classify(picked);
+    var psy = c.keep.filter(function (f) { return /\.js$/i.test(f.name); });
+    $('picked').textContent = picked.length
+      ? ('共 ' + picked.length + ' 个文件 → 将读取 ' + c.keep.length + ' 个，跳过 ' + c.skip + ' 个无关文件')
+      : '尚未选择文件';
+    $('go').disabled = psy.length === 0;
+    if (!picked.length) return;
+    var guess = c.keep.filter(function (f) { return !/-legacy-browsers\.js$/i.test(f.name) && !/^lib\//i.test(f.relPath || ''); })
+      .map(function (f) { return (f.relPath || f.name); })[0] || '';
+    if (!$('title').value && guess) $('title').value = guess.replace(/\.js$/i, '').split('/').pop();
+    if (!psy.length) log('⚠️ 没找到实验脚本（*.js）—— 请确认拖入的是 Export HTML 生成的文件夹', 'warn');
+  }
+
+  // 拖拽：支持文件夹（webkitGetAsEntry 递归）
+  var drop = $('drop');
+  ['dragenter', 'dragover'].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add('hot'); }); });
+  ['dragleave', 'drop'].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.remove('hot'); }); });
+  drop.addEventListener('drop', function (e) {
+    var items = e.dataTransfer.items, out = [], pending = 0;
+    if (items && items.length && items[0].webkitGetAsEntry) {
+      for (var i = 0; i < items.length; i++) {
+        var entry = items[i].webkitGetAsEntry();
+        if (!entry) continue;
+        pending++;
+        (function (ent) { walk(ent, '', function (list) { out = out.concat(list); if (--pending === 0) setPicked(out); }); })(entry);
+      }
+    } else { setPicked(e.dataTransfer.files); }
+  });
+  function walk(entry, prefix, done) {
+    if (entry.isFile) {
+      entry.file(function (f) { try { Object.defineProperty(f, 'relPath', { value: prefix + f.name }); } catch (e) {} done([f]); });
+      return;
+    }
+    if (!entry.isDirectory) return done([]);
+    var reader = entry.createReader(), entries = [];
+    var readBatch = function () {
+      reader.readEntries(function (batch) {
+        if (!batch.length) {
+          var out = [], total = entries.length;
+          if (!total) return done([]);
+          entries.forEach(function (en) {
+            walk(en, prefix + entry.name + '/', function (l) { out = out.concat(l); if (--total === 0) done(out); });
+          });
+          return;
+        }
+        entries = entries.concat(batch); readBatch();
+      });
+    };
+    readBatch();
+  }
+  $('pickDir').onclick = function () { $('dir').click(); };
+  $('dir').onchange = function (e) {
+    var list = Array.prototype.slice.call(e.target.files);
+    list.forEach(function (f) { try { Object.defineProperty(f, 'relPath', { value: f.webkitRelativePath || f.name }); } catch (err) {} });
+    setPicked(list);
+  };
+
+  $('go').onclick = async function () {
+    var btn = this; btn.disabled = true;
+    try {
+      var c = classify(picked);
+      if (!c.keep.length) throw new Error('没有可处理的文件');
+      log('读取 ' + c.keep.length + ' 个文件…');
+      var files = [];
+      for (var i = 0; i < c.keep.length; i++) {
+        var f = c.keep[i];
+        files.push({ name: f.name, relPath: f.relPath || f.name, data: new Uint8Array(await f.arrayBuffer()) });
+      }
+      var assets = await loadAssets();
+      log('开始打包…');
+      var res = await PsywebPack.pack({ files: files, assets: assets, title: $('title').value || '在线实验' });
+      res.log.forEach(function (l) { log(l.line, l.cls); });
+      res.resources.forEach(function (s) { log('  ' + s); });
+
+      var blob = new Blob([res.html], { type: 'text/html;charset=utf-8' });
+      var name = (res.meta.expName || 'experiment') + '_便携包.html';
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = name; a.textContent = '⬇ 点击下载 ' + name + '（' + (blob.size / 1048576).toFixed(2) + ' MB）';
+      $('log').appendChild(a);
+      $('log').appendChild(document.createElement('br'));
+      log('✅ 完成。把这个文件发给被试即可。', 'ok');
+      // 供自动化测试读取
+      window.__SITE_TEST__ = {
+        ok: true, sizeBytes: blob.size, name: name,
+        patches: res.applied.length, resources: Object.keys(res.resources || {}).length,
+        changes: res.changes.length, todos: res.todos.length,
+        version: (document.querySelector('h1') ? 'v1' : '')
+      };
+    } catch (e) {
+      log('❌ 出错：' + (e && (e.message || e.name) || e), 'bad');
+      window.__SITE_TEST__ = { ok: false, error: String(e && e.message || e) };
+    } finally { btn.disabled = false; }
+  };
+
+  // 离线单文件版下载入口：只在**被托管**时显示。
+  // 理由：单文件工具本身就是本页的内联版本，它被双击打开时源是 file://，
+  // 旁边并没有 offline.html，显示这个链接只会让用户点了 404。
+  if (location.protocol !== 'file:') {
+    var oc = document.getElementById('offlineCard');
+    if (oc) oc.style.display = '';
+  }
+
+  // 自动化测试钩子：把 pack 的核心能力暴露出去（也方便别人复查本页行为）
+  window.__psywebSite = { setPicked: setPicked, classify: classify, log: log, ASSETS: ASSETS };
+})();
+</script>
+</body>
+</html>

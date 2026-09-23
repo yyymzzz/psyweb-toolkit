@@ -1,0 +1,23 @@
+# 统一换行符：文本入库为 LF，检出时由 core.autocrlf 决定
+* text=auto
+
+# 明确的文本类型
+*.md   text eol=lf
+*.js   text eol=lf
+*.json text eol=lf
+*.ps1  text eol=crlf
+*.html text eol=lf
+*.css  text eol=lf
+
+# Windows 批处理：必须 CRLF，且文件内容必须保持**纯 ASCII**
+# 原因（实测踩过）：cmd.exe 按控制台代码页(中文系统 GBK)读取 .cmd，
+# 若文件是 UTF-8 中文 + LF 行尾，多字节内容会被切错行，
+# 整行被当成未知命令，表现为满屏 "不是内部或外部命令"。
+# 中文文案请放在浏览器界面（UTF-8 HTML）里，不要放进 .cmd。
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
+
+# 二进制
+*.png  binary
+*.jpg  binary
+*.zip  binary
