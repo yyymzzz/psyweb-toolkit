@@ -390,7 +390,7 @@
     .screen-fit { flex: 0 0 auto; width: min(100%, 620px); transform: scale(var(--screen-scale, 1)); transform-origin: center center; }
     .participant-screen {
       display: grid;
-      grid-template-areas: "heading heading" "subtitle subtitle" "checks checks" "consent recovery" "actions actions";
+      grid-template-areas: "heading heading" "subtitle subtitle" "checks checks" "consent consent" "actions actions";
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: 5px 7px;
       width: 100%;
@@ -415,28 +415,9 @@
     .consent-card h3 { margin: 0 0 2px; color: #e9ebf0; font-size: 9.5px; font-weight: 700; }
     .consent-card p { margin: 0; color: #c2c6cf; font-size: 8.8px; line-height: 1.45; }
     .consent-card strong { color: #f1f2f5; font-weight: 700; }
-    .recovery-card { grid-area: recovery; min-width: 0; margin: 0; padding: 7px 8px; border: 1px solid #6b5520; border-radius: 8px; color: #e9ddba; background: #2a2416; }
-    .recovery-title { margin: 0 0 2px; color: #f1e3bc; font-size: 9px; font-weight: 650; line-height: 1.4; }
-    .recovery-help { margin: 0 0 5px; color: #cbbd93; font-size: 8px; line-height: 1.4; }
-    .recovery-button { min-height: 22px; padding: 3px 7px; border: 1px solid #665f50; border-radius: 4px; color: #d1cec7; background: #39362f; font-size: 8.2px; font-weight: 550; }
     .participant-actions { grid-area: actions; margin: 0; text-align: center; }
     .start-button { display: block; width: 100%; min-height: 31px; border: 0; border-radius: 6px; color: #fff; background: #2f6fed; box-shadow: 0 3px 8px rgba(47, 111, 237, .2); font-size: 12px; font-weight: 720; letter-spacing: .01em; }
     .participant-note { margin: 3px 0 0; color: #b4bbc6; font-size: 8px; line-height: 1.35; }
-    .webgl-variant {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 2px 11px;
-      align-items: center;
-      margin-top: 9px;
-      padding: 8px 10px;
-      border: 1px solid #57343a;
-      border-radius: 8px;
-      color: #edc8c5;
-      background: #24191d;
-    }
-    .variant-caption { grid-column: 1 / -1; margin: 0 0 1px; color: #bd8989; font-size: 8px; font-weight: 700; letter-spacing: .05em; }
-    .variant-copy { min-width: 0; margin: 0; color: #e88d86; font-size: 9.3px; font-weight: 650; line-height: 1.42; }
-    .variant-help { grid-column: 1 / -1; margin: 0; color: #ccaaa8; font-size: 8.3px; line-height: 1.45; }
     .start-button.disabled-sample { width: auto; min-height: 26px; padding: 3px 8px; border-radius: 5px; color: #a3a7b0; background: #3a3f4b; box-shadow: none; font-size: 8.5px; cursor: not-allowed; }
     .preview-foot { flex: 0 0 auto; margin: 7px 0 0; color: #647286; font-size: 8.5px; line-height: 1.4; text-align: center; }
 
@@ -477,8 +458,6 @@
       .participant-screen h2 { font-size: 19px; }
       .consent-card { padding: 5px 6px; }
       .consent-card p { font-size: 8px; }
-      .recovery-card { padding: 5px 6px; }
-      .recovery-help { font-size: 7.4px; }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
@@ -634,12 +613,7 @@
                 <h3>知情同意</h3>
                 <p>本实验仅用于学术研究，<strong>不收集姓名等可识别身份的信息</strong>；你的作答数据会以匿名编号形式记录，仅保存在实验者本地。参与完全<strong>自愿</strong>，你可以在任何时刻关闭页面退出，不会有任何不利后果。点击「开始」即表示你已理解并同意参与。</p>
               </section>
-              <section class="recovery-card">
-                <p class="recovery-title">发现上次运行留下的数据（11 行，2026/9/24 00:31:08）。</p>
-                <p class="recovery-help">如果那次是正常做完并已经导出过的，可以直接忽略；如果中途异常退出（关页面/崩溃），可点下面下载。</p>
-                <button class="recovery-button" type="button">下载上次的数据</button>
-              </section>
-              <div class="participant-actions">
+                            <div class="participant-actions">
                 <button class="start-button" type="button">▶ 点击开始</button>
                 <p class="participant-note">开始后请不要刷新或关闭页面；数据会在结束时自动导出。</p>
               </div>
@@ -647,13 +621,7 @@
                 </div>
               </div>
             </div>
-            <aside class="webgl-variant" aria-label="WebGL 不可用时被试看到的样子">
-              <p class="variant-caption">显示引擎 · 检测失败时被试看到的样子</p>
-              <p class="variant-copy">未检测到 WebGL，本实验无法运行</p>
-              <button class="start-button disabled-sample" type="button" disabled>▶ 点击开始</button>
-              <p class="variant-help">请换用较新的 Chrome / Edge；若已是最新版本，请在浏览器设置里打开「使用硬件加速」后重启浏览器。</p>
-            </aside>
-          </div>
+                      </div>
         </div>
         <p class="preview-foot">静态预览 · 被试无法在此区域操作</p>
       </aside>
@@ -852,6 +820,7 @@
 
   $('go').onclick = async function () {
     var btn = this; btn.disabled = true;
+    var sres0 = $('successResult'); if (sres0) sres0.hidden = true;
     var sres0 = $('successResult'); if (sres0) sres0.hidden = true;
     try {
       var c = classify(picked);
