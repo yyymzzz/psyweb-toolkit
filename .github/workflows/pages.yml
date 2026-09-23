@@ -1,0 +1,48 @@
+# 把 site/ 目录发布到 GitHub Pages
+# ---------------------------------------------------------------------------
+# 为什么用 Actions 而不是"分支模式"：
+#   分支模式的 source.path **只允许 `/` 或 `/docs`**（实测 API 直接 422：
+#   "Invalid property /source/path: `/site` is not a possible value. Must be one
+#    of the following: /, /docs."）。而本仓库的站点在 site/，且仓库根目录
+#   还要放 README / LICENSE / src / docs，所以只能用 Actions 指定任意目录。
+name: Deploy site to Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同时只允许一个发布在跑；新的推送取消排队中的旧任务，但不打断进行中的发布
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact (site/)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
