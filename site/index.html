@@ -387,38 +387,6 @@
     .participant-window-title { position: absolute; left: 50%; color: #5f6b7c; font-size: 8px; font-weight: 600; transform: translateX(-50%); white-space: nowrap; }
     .participant-window-meta { justify-self: end; color: #7c8796; font-size: 8px; }
     .participant-viewport { position: relative; display: flex; flex: 1 1 auto; align-items: center; justify-content: center; min-width: 0; min-height: 0; padding: 6px; overflow: hidden; background: #12141a; }
-    .screen-fit { flex: 0 0 auto; width: min(100%, 620px); transform: scale(var(--screen-scale, 1)); transform-origin: center center; }
-    .participant-screen {
-      display: grid;
-      grid-template-areas: "heading heading" "subtitle subtitle" "checks checks" "consent consent" "actions actions";
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      gap: 5px 7px;
-      width: 100%;
-      padding: 10px;
-      border: 1px solid #2c313c;
-      border-radius: 10px;
-      color: #e8eaef;
-      background: #171a22;
-      box-shadow: 0 9px 22px rgba(0, 0, 0, .24);
-    }
-    .participant-screen h2 { grid-area: heading; margin: 0; color: #f1f3f7; font-size: 22px; font-weight: 720; letter-spacing: -.03em; line-height: 1.2; text-align: center; }
-    .participant-subtitle { grid-area: subtitle; margin: -2px 0 3px; color: #b1b8c4; font-size: 9.5px; line-height: 1.4; text-align: center; }
-    .participant-card { border: 1px solid #2d333e; border-radius: 8px; background: #1d212a; }
-    .checks-card { display: grid; grid-area: checks; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; align-content: start; padding: 3px 9px; }
-    .check-row { display: grid; grid-template-columns: 50px minmax(0, 1fr); gap: 5px; align-items: start; padding: 3px 0; border-bottom: 1px solid #303641; font-size: 9.5px; line-height: 1.36; }
-    .check-row:nth-child(n+3) { border-bottom: 0; }
-    .check-label { color: #a8afbb; font-weight: 620; }
-    .check-text { color: #e1e4ea; }
-    .check-text strong { color: #f2f4f8; font-weight: 700; }
-    .check-text .ready-text { color: #61cc8e; font-weight: 700; }
-    .consent-card { grid-area: consent; min-width: 0; margin: 0; padding: 7px 9px 8px; }
-    .consent-card h3 { margin: 0 0 2px; color: #e9ebf0; font-size: 9.5px; font-weight: 700; }
-    .consent-card p { margin: 0; color: #c2c6cf; font-size: 8.8px; line-height: 1.45; }
-    .consent-card strong { color: #f1f2f5; font-weight: 700; }
-    .participant-actions { grid-area: actions; margin: 0; text-align: center; }
-    .start-button { display: block; width: 100%; min-height: 31px; border: 0; border-radius: 6px; color: #fff; background: #2f6fed; box-shadow: 0 3px 8px rgba(47, 111, 237, .2); font-size: 12px; font-weight: 720; letter-spacing: .01em; }
-    .participant-note { margin: 3px 0 0; color: #b4bbc6; font-size: 8px; line-height: 1.35; }
-    .start-button.disabled-sample { width: auto; min-height: 26px; padding: 3px 8px; border-radius: 5px; color: #a3a7b0; background: #3a3f4b; box-shadow: none; font-size: 8.5px; cursor: not-allowed; }
     .preview-foot { flex: 0 0 auto; margin: 7px 0 0; color: #647286; font-size: 8.5px; line-height: 1.4; text-align: center; }
 
     @media (max-width: 1079px) {
@@ -453,15 +421,89 @@
       .success-result { align-items: flex-start; flex-direction: column; }
       .preview-pane { min-height: 700px; padding: 16px 12px 13px; }
       .preview-stage { min-height: 605px; }
-      .check-row { grid-template-columns: 44px minmax(0, 1fr); gap: 4px; font-size: 8.5px; }
-      .participant-screen { gap: 4px 5px; padding: 7px; }
-      .participant-screen h2 { font-size: 19px; }
-      .consent-card { padding: 5px 6px; }
-      .consent-card p { font-size: 8px; }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
     }
+  /* 预览区（右栏）—— 真产物活预览，取代原先手抄的开始页模拟稿
+ * ---------------------------------------------------------------------------
+ * 为什么不再"照着写一份"：手抄的模拟稿会与真实界面漂移。这个项目已经被抓到两次
+ * （假日志、条件状态当初始状态）。所以预览直接放**真实产物**：
+ *   · 页 ①「开始页」  = 便携包在本页里的真实运行结果
+ *   · 页 ②「实验第 1 页」= 同一产物，加载后自动点一下「▶ 点击开始」后的画面
+ * 零模拟 = 零漂移。产物换成任何实验，预览自动跟着变。
+ */
+
+/* ---- 空态：还没转换 ---- */
+.preview-stage { display: flex; align-items: center; justify-content: center; min-height: 0; }
+.preview-stack { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; }
+
+/* ⚠️ hidden 属性必须显式兜住（实测踩过）：
+   hidden 靠 UA 样式表的 display:none 生效，而下面的作者规则
+   .preview-empty{display:flex} / .preview-carousel{display:flex} 优先级更高，
+   会把 display:none 盖掉 —— 结果是 JS 里 el.hidden=true 读出来是对的，
+   肉眼看却两块同时显示（空态与轮播叠在一起）。
+   所以凡是自己设了 display 的元素，都要把 [hidden] 显式写回来。 */
+.preview-empty[hidden],
+.preview-carousel[hidden],
+.preview-frame[hidden] { display: none; }
+
+.preview-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; width: 100%; height: 100%; padding: 24px 26px;
+  border: 1.5px dashed #333a45; border-radius: 10px; text-align: center;
+  background: repeating-linear-gradient(45deg, #14171d, #14171d 10px, #171b22 10px, #171b22 20px);
+}
+.preview-empty svg { width: 30px; height: 30px; color: #4b5566; }
+.preview-empty .empty-title { margin: 0; color: #8b95a5; font-size: 13px; font-weight: 700; letter-spacing: .02em; }
+.preview-empty .empty-copy { margin: 0; max-width: 300px; color: #6c7686; font-size: 10.5px; line-height: 1.65; }
+.preview-empty .empty-copy b { color: #8b95a5; }
+
+/* ---- 轮播 ---- */
+.preview-carousel { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; gap: 8px; }
+
+.participant-window {
+  display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0;
+  border: 1px solid #3a4150; border-radius: 9px; overflow: hidden;
+  background: #0d1014; box-shadow: 0 10px 26px rgba(0, 0, 0, .34);
+}
+.participant-titlebar {
+  display: flex; align-items: center; gap: 7px; flex: 0 0 auto;
+  padding: 0 10px; min-height: 27px; background: #232833; border-bottom: 1px solid #333a46;
+}
+.mini-traffic { display: inline-flex; gap: 4px; }
+.mini-traffic i { width: 7px; height: 7px; border-radius: 50%; background: #4b5361; }
+.mini-traffic i:nth-child(1) { background: #ff5f57; }
+.mini-traffic i:nth-child(2) { background: #febc2e; }
+.mini-traffic i:nth-child(3) { background: #28c840; }
+.participant-window-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9aa4b2; font-size: 9.5px; text-align: center; }
+.participant-window-meta { flex: 0 0 auto; color: #6b7484; font-size: 8.5px; font-variant-numeric: tabular-nums; }
+
+.participant-viewport { position: relative; flex: 1 1 auto; min-height: 0; background: #0d1014; }
+.preview-frame { display: block; width: 100%; height: 100%; border: 0; background: #0d1014; }
+.preview-frame[hidden] { display: none; }
+
+/* ---- 导航：滑动切换两页 ---- */
+.preview-nav { display: flex; align-items: center; justify-content: center; gap: 12px; flex: 0 0 auto; }
+.preview-nav button {
+  width: 25px; height: 25px; padding: 0; border: 1px solid #333a46; border-radius: 50%;
+  background: #1b1f27; color: #b6bfcc; font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.preview-nav button:hover:not(:disabled) { border-color: #4a5464; background: #242a34; color: #e6eaf0; }
+.preview-nav button:disabled { opacity: .34; cursor: not-allowed; }
+.preview-nav button:focus-visible { outline: 2px solid #6ea8ff; outline-offset: 2px; }
+.pv-dots { display: inline-flex; align-items: center; gap: 6px; }
+.pv-dots i { width: 6px; height: 6px; border-radius: 50%; background: #333a46; transition: background .15s, transform .15s; }
+.pv-dots i.on { background: #6ea8ff; transform: scale(1.25); }
+
+.preview-foot { flex: 0 0 auto; margin: 7px 0 0; color: #647286; font-size: 8.5px; line-height: 1.4; text-align: center; }
+
+@media (max-width: 1079px) {
+  .preview-empty { min-height: 300px; }
+  .preview-carousel { min-height: 460px; }
+}
+
   </style>
 </head>
 <body>
@@ -586,45 +628,45 @@
 
       <div class="splitter" id="splitter" role="separator" tabindex="0" aria-orientation="vertical" aria-label="拖动调整操作区与预览区宽度" aria-valuemin="50" aria-valuemax="62" aria-valuenow="53" title="拖动调整两栏宽度"></div>
       <aside class="preview-pane" aria-label="被试视角预览">
-        <div class="preview-header">
-          <div class="preview-title"><svg width="15" height="15" viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="2" y="2.5" width="14" height="10" rx="1.6" stroke="currentColor" stroke-width="1.3"/><path d="M6 15.5h6M9 12.5v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg><span>被试双击后看到 · 开始页</span></div>
-          <span class="preview-badge">页面预览</span>
+  <div class="preview-header">
+    <div class="preview-title"><svg width="15" height="15" viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="2" y="2.5" width="14" height="10" rx="1.6" stroke="currentColor" stroke-width="1.3"/><path d="M6 15.5h6M9 12.5v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg><span>被试会看到</span></div>
+    <span class="preview-badge" id="previewBadge">等待转换</span>
+  </div>
+
+  <div class="preview-stage" id="previewStage">
+    <div class="preview-stack" id="previewStack">
+
+      <!-- 空态：还没转换，没有内容可预览 -->
+      <div class="preview-empty" id="previewEmpty">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M9 21h6M12 17v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M8.5 10.5h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-dasharray="2 2.4"/></svg>
+        <p class="empty-title">预览窗口</p>
+        <p class="empty-copy">还没有可预览的内容。<br>左边选择实验文件夹并点击<b>打包成单文件</b>之后，<br>这里会显示被试打开文件后看到的画面：<br><b>① 开始页　② 实验第 1 页</b></p>
+      </div>
+
+      <!-- 转换后：两页轮播。iframe 里跑的是**真实产物**，不是示意图 -->
+      <div class="preview-carousel" id="previewCarousel" hidden>
+        <div class="participant-window">
+          <div class="participant-titlebar" aria-hidden="true">
+            <span class="mini-traffic"><i></i><i></i><i></i></span>
+            <span class="participant-window-title" id="pvSlideTitle">被试打开文件后第一眼</span>
+            <span class="participant-window-meta" id="pvSlideIndex">1 / 2</span>
+          </div>
+          <div class="participant-viewport" id="participantViewport">
+            <iframe class="preview-frame" id="pvFrame0" title="预览：开始页"></iframe>
+            <iframe class="preview-frame" id="pvFrame1" title="预览：实验第 1 页" hidden></iframe>
+          </div>
         </div>
-        <div class="preview-stage" id="previewStage">
-          <div class="preview-stack" id="previewStack">
-            <div class="participant-window" aria-label="被试电脑中的实验开始页窗口">
-              <div class="participant-titlebar" aria-hidden="true">
-                <span class="mini-traffic"><i></i><i></i><i></i></span>
-                <span class="participant-window-title">experiment.html — 预览</span>
-                <span class="participant-window-meta">HTML</span>
-              </div>
-              <div class="participant-viewport" id="participantViewport">
-                <div class="screen-fit" id="screenFit">
-            <article class="participant-screen" aria-label="被试实验开始页示例">
-              <h2>选择实验</h2>
-              <p class="participant-subtitle">开始前请确认下面几件事</p>
-              <div class="participant-card checks-card">
-                <div class="check-row"><span class="check-label">设备</span><span class="check-text">请用<strong>电脑</strong>完成（本实验需要键盘/鼠标；手机和平板无法完成）</span></div>
-                <div class="check-row"><span class="check-label">环境</span><span class="check-text">安静、不被打扰；建议戴上耳机</span></div>
-                <div class="check-row"><span class="check-label">显示</span><span class="check-text">点击开始后会进入<strong>全屏</strong>，中途请不要切换窗口</span></div>
-                <div class="check-row"><span class="check-label">显示引擎</span><span class="check-text"><span class="ready-text">已检测到 WebGL，可以开始</span></span></div>
-              </div>
-              <section class="participant-card consent-card">
-                <h3>知情同意</h3>
-                <p>本实验仅用于学术研究，<strong>不收集姓名等可识别身份的信息</strong>；你的作答数据会以匿名编号形式记录，仅保存在实验者本地。参与完全<strong>自愿</strong>，你可以在任何时刻关闭页面退出，不会有任何不利后果。点击「开始」即表示你已理解并同意参与。</p>
-              </section>
-                            <div class="participant-actions">
-                <button class="start-button" type="button">▶ 点击开始</button>
-                <p class="participant-note">开始后请不要刷新或关闭页面；数据会在结束时自动导出。</p>
-              </div>
-            </article>
-                </div>
-              </div>
-            </div>
-                      </div>
+        <div class="preview-nav" role="group" aria-label="切换预览页">
+          <button type="button" id="pvPrev" aria-label="上一页">‹</button>
+          <span class="pv-dots" id="pvDots" aria-hidden="true"><i class="on"></i><i></i></span>
+          <button type="button" id="pvNext" aria-label="下一页">›</button>
         </div>
-        <p class="preview-foot">静态预览 · 被试无法在此区域操作</p>
-      </aside>
+      </div>
+
+    </div>
+  </div>
+  <p class="preview-foot" id="previewFoot">转换后在此显示被试看到的画面</p>
+</aside>
     </div>
   </main>
 
@@ -633,15 +675,10 @@
 <script>
 (function () {
   'use strict';
-  /* 以下三块**原样取自设计稿**，未做改动 —— 它们是真机关，不是样稿：
-     · 分栏拖拽（#splitter，含键盘左右键调整）
-     · 预览等比缩放（fitPreview / fitParticipantPage + ResizeObserver）
-     实测：1440x900 视口下 --preview-scale=0.993，预览完整落在预览区内，无溢出。 */
-  const stage = document.getElementById('previewStage');
-      const stack = document.getElementById('previewStack');
-      const participantViewport = document.getElementById('participantViewport');
-      const screenFit = document.getElementById('screenFit');
-      const workspace = document.querySelector('.workspace');
+  /* 分栏拖拽：**原样取自设计稿**（含键盘左右键 + aria-valuenow），是真机关，不是样稿。
+     原设计稿里的"预览等比缩放"已刻意删除：预览改成真产物 iframe 后由 CSS 撑满，
+     不需要 transform 缩放（缩放会让画面发虚）。 */
+  const workspace = document.querySelector('.workspace');
       const splitter = document.getElementById('splitter');
       function setSplit(clientX) {
         const rect = workspace.getBoundingClientRect();
@@ -688,33 +725,133 @@
         splitter.setAttribute('aria-valuetext', `${Math.round(value)}% 操作区`);
       });
 
-      function fitPreview() {
-        if (!stage || !stack) return;
-        stack.style.setProperty('--preview-scale', '1');
-        const availableHeight = stage.clientHeight;
-        const naturalHeight = stack.offsetHeight;
-        const availableWidth = stage.clientWidth;
-        const naturalWidth = stack.offsetWidth;
-        const scale = Math.min(1, (availableHeight - 4) / naturalHeight, (availableWidth - 4) / naturalWidth);
-        stack.style.setProperty('--preview-scale', String(Math.max(.6, scale)));
+      })();
+</script>
+<script>
+/* 预览区轮播：把**真实产物**放进 iframe 里跑，两页之间滑动切换
+ * ---------------------------------------------------------------------------
+ * 页 ①「开始页」     : 产物原样加载 -> 被试打开文件看到的第一眼
+ * 页 ②「实验第 1 页」 : 同一产物，加载后自动点一下 #psyweb-start -> 实验第一屏
+ *
+ * 关键实测前提（写代码前已用原型验证，不是假设）：
+ *   · file:// 页面里 iframe 可以用 srcdoc 加载产物；
+ *   · 无 sandbox 时 iframe 与父页同源，能拿到 contentDocument 并触发按钮 click；
+ *   · iframe 内 WebGL 可用（探针报 true）。
+ *   blob: URL 那条路当时没验到真实加载，所以**不用它**。
+ *
+ * 刻意不用 fitPreview 那套 transform 缩放：iframe 按 CSS 撑满即可，
+ * 缩放会让画面发虚，且那套机制（1600 字符）已随模拟稿一起删掉。
+ */
+(function () {
+  'use strict';
+  var GATE_POLL_MS = 200;      // 轮询「开始」按钮的间隔
+  var GATE_MAX_WAIT = 25000;   // 最多等多久（产物要加载 3.6 MB）
+  var START_SETTLE = 1400;     // 点击开始后留多久让第一屏渲染出来
+
+  var empty = document.getElementById('previewEmpty');
+  var carousel = document.getElementById('previewCarousel');
+  var badge = document.getElementById('previewBadge');
+  var foot = document.getElementById('previewFoot');
+  var title = document.getElementById('pvSlideTitle');
+  var index = document.getElementById('pvSlideIndex');
+  var dots = document.getElementById('pvDots');
+  var prev = document.getElementById('pvPrev');
+  var next = document.getElementById('pvNext');
+  var frame0 = document.getElementById('pvFrame0');
+  var frame1 = document.getElementById('pvFrame1');
+  if (!empty || !carousel || !frame0 || !frame1) return;
+
+  var html = null;       // 产物 HTML
+  var slide = 0;
+  var frame1Ready = false;
+
+  var TITLES = ['被试打开文件后第一眼', '点「▶ 点击开始」之后'];
+  var CAPS = ['① 开始页', '② 实验第 1 页'];
+
+  function render() {
+    var last = 1;
+    prev.disabled = slide === 0;
+    next.disabled = slide === last;
+    title.textContent = TITLES[slide];
+    index.textContent = (slide + 1) + ' / 2';
+    var kids = dots.children;
+    for (var i = 0; i < kids.length; i++) kids[i].className = i === slide ? 'on' : '';
+    frame0.hidden = slide !== 0;
+    frame1.hidden = slide !== 1;
+    foot.textContent = '预览窗口 · ' + CAPS[slide] + ' · 这里显示的是真实产物在本浏览器里的运行结果';
+  }
+
+  function go(n) {
+    if (n < 0 || n > 1 || n === slide) return;
+    slide = n;
+    if (n === 1 && !frame1Ready) {
+      frame1Ready = true;
+      frame1.srcdoc = html;                       // 懒加载：只有真的切到第 2 页才解析这 3.6 MB
+      autoStart(frame1);
+    }
+    render();
+  }
+
+  // 点掉产物的开始页（知情同意那一步），露出实验第一屏。
+  // 全屏请求在 iframe 里会被拒绝 —— 产物自己的 .catch 兜住了，不影响后续。
+  function autoStart(frame) {
+    var t0 = Date.now();
+    (function poll() {
+      if (Date.now() - t0 > GATE_MAX_WAIT) return;
+      var btn = null;
+      try {
+        var d = frame.contentDocument;
+        if (d && d.getElementById('psyweb-start')) btn = d.getElementById('psyweb-start');
+      } catch (e) { /* 文档还没就绪 */ }
+      if (btn) {
+        // ⚠️ 实测风险：产物在开始页会请求全屏。iframe 没加 allow="fullscreen"，
+        //    但无头环境下该请求**成功了** —— 预览会抢占用户整屏（探针回报
+        //    document.fullscreenElement 非空）。所以点之前先把全屏入口掐掉：
+        //    只作用于预览里的这个窗口，绝不碰被试真实打开文件时的那条路径。
+        try {
+          var w = frame.contentWindow;
+          var noFs = function () { return Promise.reject(new Error('psyweb-preview: fullscreen disabled')); };
+          if (w && w.Element && w.Element.prototype) {
+            w.Element.prototype.requestFullscreen = noFs;
+            w.Element.prototype.webkitRequestFullscreen = noFs;
+            w.Element.prototype.webkitRequestFullScreen = noFs;
+          }
+        } catch (e) { /* 拿不到窗口就算了，下面照点 */ }
+        try { btn.click(); } catch (e) { /* ignore */ }
+        setTimeout(function () {
+          try {
+            var d2 = frame.contentDocument;
+            if (d2) d2.title = '实验第 1 页';       // 便于自动化探针确认"真的进去了"
+          } catch (e) { /* ignore */ }
+        }, START_SETTLE);
+        return;
       }
-      function fitParticipantPage() {
-        if (!participantViewport || !screenFit) return;
-        screenFit.style.setProperty('--screen-scale', '1');
-        const availableHeight = participantViewport.clientHeight - 2;
-        const availableWidth = participantViewport.clientWidth - 2;
-        const naturalHeight = screenFit.offsetHeight;
-        const naturalWidth = screenFit.offsetWidth;
-        const scale = Math.min(1, availableHeight / naturalHeight, availableWidth / naturalWidth);
-        screenFit.style.setProperty('--screen-scale', String(Math.max(.55, scale)));
-      }
-      if ('ResizeObserver' in window) new ResizeObserver(fitPreview).observe(stage);
-      if ('ResizeObserver' in window) new ResizeObserver(fitParticipantPage).observe(participantViewport);
-      window.addEventListener('resize', () => { fitPreview(); fitParticipantPage(); }, { passive: true });
-      window.addEventListener('load', () => { fitPreview(); fitParticipantPage(); }, { once: true });
-      requestAnimationFrame(fitPreview);
-      requestAnimationFrame(fitParticipantPage);
+      window.setTimeout(poll, GATE_POLL_MS);
     })();
+  }
+
+  prev.addEventListener('click', function () { go(slide - 1); });
+  next.addEventListener('click', function () { go(slide + 1); });
+  Array.prototype.forEach.call(dots.children, function (dot, i) {
+    dot.style.cursor = 'pointer';
+    dot.addEventListener('click', function () { go(i); });
+  });
+
+  // 打包完成 -> 拿到真产物 -> 切到预览
+  document.addEventListener('psyweb:packed', function (ev) {
+    var detail = ev && ev.detail;
+    if (!detail || typeof detail.html !== 'string' || !detail.html) return;
+    html = detail.html;
+    empty.hidden = true;
+    carousel.hidden = false;
+    badge.textContent = '实时预览';
+    frame0.srcdoc = html;                          // 第 1 页立即出
+    slide = 0;
+    frame1Ready = false;
+    frame1.removeAttribute('srcdoc');
+    render();
+  });
+})();
 </script>
 <script>
 (function () {
@@ -853,6 +990,12 @@
         if (sres) sres.hidden = false;
       }
       log('✅ 完成。把这个文件发给被试即可。', 'ok');
+      // 把真产物交给右栏预览区；预览失败绝不影响下载
+      try {
+        document.dispatchEvent(new CustomEvent('psyweb:packed', {
+          detail: { html: res.html, name: name, bytes: blob.size, resources: Object.keys(res.resources || {}).length }
+        }));
+      } catch (e) { /* 预览是可选的，出错不打扰主流程 */ }
       // 供自动化测试读取
       window.__SITE_TEST__ = {
         ok: true, sizeBytes: blob.size, name: name,
