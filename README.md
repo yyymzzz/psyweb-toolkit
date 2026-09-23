@@ -36,8 +36,9 @@
 
 ### ② 离线单文件版（对方网络不稳 / 你要脱网操作）
 
-下载 [`site/offline.html`](site/offline.html)（约 3.2 MB），**双击打开**即可 —— 它是①的离线内联版，功能完全相同，
-不需要服务器、不需要联网、Windows / macOS / Linux 通用。在同一页面里也能下到。
+下载 **[离线单文件版](https://yyymzzz.github.io/psyweb-toolkit/offline.html)**（约 3.2 MB），**双击打开**即可 ——
+它是①的离线内联版，功能完全相同，不需要服务器、不需要联网、Windows / macOS / Linux 通用。
+（源码见 [`site/offline.html`](site/offline.html)，由 `src/build-single-tool.ps1` 生成。）
 
 ### ③ 本地工具（唯一能直接吃 `.psyexp` 的方式）
 
@@ -65,7 +66,8 @@ pwsh -File scripts/setup.ps1     # 环境体检：Node / 依赖 / 素材 / Psych
 | **下载 CSV** | 最稳。点一下得到 `psyweb_'01'.csv` | 适合文件能传的场景 |
 | **结果摘要截图** | 兜底。写明被试编号/行数/字段数 | 只能核对，不能当数据用 |
 
-主试端把二维码截图**拖进** [`site/collector.html`](site/collector.html) → 自动解码分组 → 一键**导出合并 CSV**。
+主试端把二维码截图**拖进** [collector.html](https://yyymzzz.github.io/psyweb-toolkit/collector.html)（也可下载后双击，纯本地）
+→ 自动解码分组 → 一键**导出合并 CSV**。
 多名被试的截图可以一起拖，按数据集自动分组，不会混。若提示「缺 2」= 对方少发了第 2 张，让他补发。
 
 ---
