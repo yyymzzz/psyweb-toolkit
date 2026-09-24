@@ -51,6 +51,8 @@
 
 打开 **https://yyymzzz.github.io/psyweb-toolkit/** →
 
+> 转换期间右栏会**实时预览真实产物**：① 开始页　② 实验第 1 页，可滑动切换。预览里跑的就是最终那个文件本身，不是示意图。
+
 1. 在 PsychoPy Builder 里菜单 `File → Export HTML…`（或往 Pavlovia 同步一次），得到一个文件夹；
 2. 把**整个文件夹拖进网页**；
 3. 下载生成的单个 `.html`，发给被试。
@@ -145,7 +147,7 @@ third_party/     第三方许可证原文（PsychoJS 的 LEGAL.txt 必须随附�
 
 本仓库自身代码：**MIT**（见 [`LICENSE`](LICENSE)）—— 可自由使用、修改、再分发。
 
-随附第三方组件**全部是 MIT**（PsychoJS、jQuery、jQuery UI、PreloadJS、pako、qrcode-generator），
+随附第三方组件**全部是 MIT**（PsychoJS、jQuery、jQuery UI、PreloadJS、pako、qrcode-generator 均为 MIT；**jsQR 为 Apache-2.0**），
 没有被传染成 copyleft 的风险；其中 PsychoJS 的许可证原文**必须随附**，见
 [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md)。
 

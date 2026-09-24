@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 <#
   组装"免安装分发包"
   ------------------------------------------------------------------
@@ -23,7 +23,7 @@ $ROOT = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $PKG  = Join-Path $ROOT 'dist\psyweb-工具包'
 
 if (-not (Test-Path -LiteralPath $NodeExe)) { throw "找不到 node.exe：$NodeExe（可用 -NodeExe 指定）" }
-foreach ($need in @('src\tool-server.js','src\build-portable.js','src\pack-portable.js','spike\m0\vendor\psychojs-2026.2.3.iife.js','tools\collector.html')) {
+foreach ($need in @('src\tool-server.js','src\build-portable.js','src\pack-portable.js','spike\m0\vendor\psychojs-2026.2.3.iife.js','site\collector.html')) {
     if (-not (Test-Path -LiteralPath (Join-Path $ROOT $need))) { throw "缺少必要文件：$need" }
 }
 
@@ -58,7 +58,7 @@ Write-Host ("   node_modules  {0:N2} MB" -f ((Get-ChildItem "$PKG\node_modules" 
 
 Write-Host '== 5/6 入口、回收器与说明 =='
 Copy-Item -LiteralPath (Join-Path $ROOT '启动psyweb工具.cmd') -Destination $PKG -Force
-Copy-Item -LiteralPath (Join-Path $ROOT 'tools\collector.html') -Destination "$PKG\tools\" -Force
+Copy-Item -LiteralPath (Join-Path $ROOT 'site\collector.html') -Destination "$PKG\tools\" -Force
 if (Test-Path (Join-Path $ROOT 'docs\使用说明.md')) { Copy-Item (Join-Path $ROOT 'docs\使用说明.md') -Destination $PKG -Force }
 if (Test-Path (Join-Path $ROOT 'docs\分发包.md')) { Copy-Item (Join-Path $ROOT 'docs\分发包.md') -Destination $PKG -Force }
 
@@ -100,7 +100,7 @@ $licLines += $rows
 $licLines += ''
 $licLines += '## 说明'
 $licLines += '- 若要**公开分发**本工具，请先补齐上表各组件的许可证原文。'
-$licLines += '- 本工具自身代码的许可：待定（见仓库 docs/决策记录.md 的待决事项）。'
+本工具自身代码：MIT（见仓库 LICENSE）。
 $licLines += ('- 生成时间：' + (Get-Date -Format 'yyyy-MM-dd HH:mm'))
 $licLines | Out-File -FilePath "$PKG\第三方许可.md" -Encoding UTF8
 Write-Host ("   第三方许可.md  {0} 个组件" -f $lock.count)
@@ -125,7 +125,7 @@ psyweb 转换工具 · 免安装包
 【做好之后怎么用】
 ① 把生成的 html 发给被试（电脑上双击打开；手机和平板做不了）
 ② 被试做完 → 结果页给出 摘要截图 / 下载 CSV / 数据二维码
-③ 他们把截图或 CSV 发回来 → 双击 tools\collector.html，把截图拖进去，
+③ 他们把截图或 CSV 发回来 → 双击 site\collector.html，把截图拖进去，
    自动还原成表格，可累积多人后一键导出合并 CSV
 
 【数据安全】

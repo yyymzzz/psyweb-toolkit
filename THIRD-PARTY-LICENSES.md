@@ -12,6 +12,7 @@
 | PreloadJS | 1.0.1 | MIT | jsDelivr `preloadjs@1.0.1` | [`licenses/preloadjs-MIT.txt`](licenses/preloadjs-MIT.txt) |
 | pako | 1.0.10 | MIT | cdnjs `pako/1.0.10` | [`licenses/pako-MIT.txt`](licenses/pako-MIT.txt) |
 | qrcode-generator | 2.0.4 | MIT | npm `qrcode-generator` | [`licenses/qrcode-generator-MIT.txt`](licenses/qrcode-generator-MIT.txt) |
+| **jsQR**（内联进 site/collector.html，二维码解码） | 1.4.0 | **Apache-2.0** | https://github.com/cozmo/jsQR | [licenses/jsqr-Apache2.0.txt](licenses/jsqr-Apache2.0.txt) |
 
 > **关于 PsychoJS 的许可**：PsychoJS（浏览器端 JS 运行时）是 **MIT**，
 > 与桌面版 PsychoPy 的 **GPL-3.0** 是**两套不同的许可**，请不要混淆。
@@ -37,6 +38,7 @@
 | 包 | 许可 |
 |---|---|
 | fast-xml-parser | MIT |
+| jsQR（collector 重建依赖） | **Apache-2.0** |
 | qrcode-generator | MIT |
 
 ## 三、指纹

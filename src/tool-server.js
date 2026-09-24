@@ -111,7 +111,7 @@ a{color:#2f6fed}
     <div style="font-weight:700;margin-bottom:6px">做完了怎么用</div>
     <div class="env">① 把生成的 <b>html 文件</b>发给被试（微信/QQ/邮件都行，手机上别点开）<br>
     ② 被试在电脑上双击完成 → 结果页给出「摘要 / 下载 CSV / 数据二维码」<br>
-    ③ 对方把截图或 CSV 发回 → 用 <code>tools/collector.html</code> 拖进去即可还原成表格</div>
+    ③ 对方把截图或 CSV 发回 → 用 <code>site/collector.html</code> 拖进去即可还原成表格</div>
   </div>
 </div>
 <script>
