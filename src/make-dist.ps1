@@ -23,7 +23,7 @@ $ROOT = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $PKG  = Join-Path $ROOT 'dist\psyweb-工具包'
 
 if (-not (Test-Path -LiteralPath $NodeExe)) { throw "找不到 node.exe：$NodeExe（可用 -NodeExe 指定）" }
-foreach ($need in @('src\tool-server.js','src\build-portable.js','src\pack-portable.js','spike\m0\vendor\psychojs-2026.2.3.iife.js','site\collector.html')) {
+foreach ($need in @('src\tool-server.js','src\build-portable.js','src\pack-portable.js','vendor\psychojs-2026.2.3.iife.js','site\collector.html')) {
     if (-not (Test-Path -LiteralPath (Join-Path $ROOT $need))) { throw "缺少必要文件：$need" }
 }
 
@@ -41,11 +41,11 @@ foreach ($f in $srcFiles) { Copy-Item -LiteralPath (Join-Path $ROOT "src\$f") -D
 Write-Host ("   {0} 个 js  {1:N2} MB" -f $srcFiles.Count, ((Get-ChildItem "$PKG\src" -File | Measure-Object -Property Length -Sum).Sum / 1MB))
 
 Write-Host '== 3/5 第三方运行时（按 vendor.lock 已锁定版本）=='
-# pack-portable.js 会从 <root>\spike\m0\vendor 读取，故保持同样的相对结构
+# pack-portable.js 会从 <root>\vendor 读取，故保持同样的相对结构
 New-Item -ItemType Directory -Force -Path "$PKG\spike\m0" | Out-Null
-Copy-Item -LiteralPath (Join-Path $ROOT 'spike\m0\vendor') -Destination "$PKG\spike\m0\vendor" -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $ROOT 'vendor') -Destination "$PKG\vendor" -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $ROOT 'vendor.lock.json') -Destination "$PKG\vendor.lock.json" -Force
-Write-Host ("   vendor  {0:N1} MB" -f ((Get-ChildItem "$PKG\spike\m0\vendor" -File | Measure-Object -Property Length -Sum).Sum / 1MB))
+Write-Host ("   vendor  {0:N1} MB" -f ((Get-ChildItem "$PKG\vendor" -File | Measure-Object -Property Length -Sum).Sum / 1MB))
 
 Write-Host '== 4/5 npm 依赖（只带运行期需要的两个）=='
 foreach ($m in @('fast-xml-parser','qrcode-generator')) {

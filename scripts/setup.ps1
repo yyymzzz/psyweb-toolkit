@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 <#
   psyweb 环境检查 / 一键引导
   --------------------------------------------------------------------
@@ -82,11 +82,11 @@ if (-not $missingNpm.Count) {
 # ---------------------------------------------------------------- ③ 第三方运行时
 Head "③ 第三方运行时库（按 vendor.lock.json 锁定）"
 $lock = Join-Path $ROOT 'vendor.lock.json'
-$probe = Join-Path $ROOT 'spike\m0\vendor\psychojs-2026.2.3.iife.js'
+$probe = Join-Path $ROOT 'vendor\psychojs-2026.2.3.iife.js'
 if (-not (Test-Path -LiteralPath $lock)) {
     Bad "缺少 vendor.lock.json（依赖真相源），无法校验"
 } elseif (Test-Path -LiteralPath $probe) {
-    $n = (Get-ChildItem (Join-Path $ROOT 'spike\m0\vendor') -File -ErrorAction SilentlyContinue | Measure-Object).Count
+    $n = (Get-ChildItem (Join-Path $ROOT 'vendor') -File -ErrorAction SilentlyContinue | Measure-Object).Count
     Ok "已就位（vendor 目录 $n 个文件）"
 } elseif ($CheckOnly) {
     Bad "未拉取 → 运行 pwsh -File scripts/fetch-vendor.ps1"

@@ -321,6 +321,22 @@ function doConvert(payload) {
 
 // ---------------------------------------------------------------- 服务
 const server = http.createServer((req, res) => {
+  // 只接受本机来源的同源请求。
+  // 为什么需要：即使只绑 127.0.0.1，任意网页仍可让浏览器向本机发跨站请求
+  // （DNS rebinding / 表单 CSRF 面），触发本机转换并往 输出\ 落盘。
+  // 校验 Host + Origin（Origin 缺失视为同源导航，允许）。
+  {
+    const host = String(req.headers.host || '');
+    const origin = String(req.headers.origin || '');
+    const allow = [`127.0.0.1:${PORT}`, `localhost:${PORT}`];
+    const okHost = allow.indexOf(host) >= 0;
+    const okOrigin = !origin || allow.some((h) => origin === `http://${h}`);
+    if (!okHost || !okOrigin) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('forbidden: 仅允许本机同源访问');
+      return;
+    }
+  }
   if (req.method === 'GET' && (req.url === '/' || req.url.startsWith('/?'))) {
     return send(res, 200, pageHtml(), 'text/html; charset=utf-8');
   }

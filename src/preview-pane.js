@@ -87,6 +87,22 @@
             w.Element.prototype.webkitRequestFullScreen = noFs;
           }
         } catch (e) { /* 拿不到窗口就算了，下面照点 */ }
+        // 预览里跑的是**真产物**，而产物会往 localStorage 写自动存盘
+        // （psyweb.autosave.v1）。iframe 与工具页同源 -> 预览会把实验数据
+        // 写进工具站的存储里，并让下一次预览弹出"恢复上次数据"的提示。
+        // 预览不该产生任何持久化副作用：这里先清掉旧键，再把该键的写入掐掉。
+        // （只作用于预览窗口，不影响被试真实打开文件时的自动存盘。）
+        try {
+          var lw = frame.contentWindow;
+          if (lw && lw.Storage && lw.Storage.prototype) {
+            var origSet = lw.Storage.prototype.setItem;
+            lw.Storage.prototype.setItem = function (k, v) {
+              if (k === 'psyweb.autosave.v1') return undefined;
+              return origSet.call(this, k, v);
+            };
+            try { lw.localStorage.removeItem('psyweb.autosave.v1'); } catch (e2) {}
+          }
+        } catch (e) { /* 拿不到窗口就算了 */ }
         try { btn.click(); } catch (e) { /* ignore */ }
         setTimeout(function () {
           try {

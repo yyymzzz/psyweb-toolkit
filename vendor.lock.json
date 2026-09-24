@@ -5,7 +5,7 @@
   "count": 23,
   "entries": {
     "psychojs-2020.2.js": {
-      "path": "spike/m0/vendor/psychojs-2020.2.js",
+      "path": "vendor/psychojs-2020.2.js",
       "url": "https://lib.pavlovia.org/psychojs-2020.2.js",
       "sha256": "128f4720d20b831c9f24e48db3b9926437ff4e2272248ab8b68d5c2bd9cea5ca",
       "bytes": 252265,
@@ -14,7 +14,7 @@
       "state": "present"
     },
     "pixi-5.3.3.min.js": {
-      "path": "spike/m0/vendor/pixi-5.3.3.min.js",
+      "path": "vendor/pixi-5.3.3.min.js",
       "url": "https://cdnjs.cloudflare.com/ajax/libs/pixi.js/5.3.3/pixi.min.js",
       "sha256": "b94f290280771e7869be5e3c7934a199ced5ed93d0b86b024fc0d470615b1367",
       "bytes": 401479,
@@ -23,7 +23,7 @@
       "state": "present"
     },
     "preloadjs.min.js": {
-      "path": "spike/m0/vendor/preloadjs.min.js",
+      "path": "vendor/preloadjs.min.js",
       "url": "https://cdnjs.cloudflare.com/ajax/libs/PreloadJS/1.0.1/preloadjs.min.js",
       "sha256": "659aba74af795768d9d8d2ed688e49cd5f47d9425d5a1630329a845759b4591d",
       "bytes": 65320,
@@ -32,7 +32,7 @@
       "state": "present"
     },
     "howler.min.js": {
-      "path": "spike/m0/vendor/howler.min.js",
+      "path": "vendor/howler.min.js",
       "url": "https://cdnjs.cloudflare.com/ajax/libs/howler/2.1.2/howler.min.js",
       "sha256": "125eddcb1755a757b5bf4c608ebae9cebe7e04edbda703f441f978d150df7e22",
       "bytes": 34747,
@@ -41,7 +41,7 @@
       "state": "present"
     },
     "Tone.js": {
-      "path": "spike/m0/vendor/Tone.js",
+      "path": "vendor/Tone.js",
       "url": "https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.61/Tone.js",
       "sha256": "0bd26caf0d70cb73aa1cf647e729cd7ffcfa17a2f395a45b78cbb28c0aebd934",
       "bytes": 348619,
@@ -50,7 +50,7 @@
       "state": "present"
     },
     "moment.min.js": {
-      "path": "spike/m0/vendor/moment.min.js",
+      "path": "vendor/moment.min.js",
       "url": "https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.24.0/moment.min.js",
       "sha256": "e22419e8154be2a34a950dbb4c4c448413751c53ef02f00c6c56af28aa2c4964",
       "bytes": 53324,
@@ -59,7 +59,7 @@
       "state": "present"
     },
     "pako.min.js": {
-      "path": "spike/m0/vendor/pako.min.js",
+      "path": "vendor/pako.min.js",
       "url": "https://cdnjs.cloudflare.com/ajax/libs/pako/1.0.10/pako.min.js",
       "sha256": "29cfa0542b9864b6640cfdcc8f15b184db6431b532db2702a3ce97e5f2a7fc1c",
       "bytes": 45988,
@@ -68,7 +68,7 @@
       "state": "present"
     },
     "xlsx.full.min.js": {
-      "path": "spike/m0/vendor/xlsx.full.min.js",
+      "path": "vendor/xlsx.full.min.js",
       "url": "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.14.2/xlsx.full.min.js",
       "sha256": "039b056ea0862723a2cd5a1d5cf41f2bf9c7252a11720f9cae54c6d479e2209c",
       "bytes": 922365,
@@ -77,7 +77,7 @@
       "state": "present"
     },
     "log4javascript.min.js": {
-      "path": "spike/m0/vendor/log4javascript.min.js",
+      "path": "vendor/log4javascript.min.js",
       "url": "https://cdnjs.cloudflare.com/ajax/libs/log4javascript/1.4.9/log4javascript.min.js",
       "sha256": "b13bbfbfc45217edd5c7eafc354286728672dfb0be210432215d5b081f8b8c04",
       "bytes": 127856,
@@ -86,7 +86,7 @@
       "state": "present"
     },
     "seedrandom.min.js": {
-      "path": "spike/m0/vendor/seedrandom.min.js",
+      "path": "vendor/seedrandom.min.js",
       "url": "https://cdnjs.cloudflare.com/ajax/libs/seedrandom/3.0.1/seedrandom.min.js",
       "sha256": "a968685515e23ea8a9502aa8dd3974346c7fa39e8e444b46d5a6b124838248db",
       "bytes": 1610,
@@ -95,7 +95,7 @@
       "state": "present"
     },
     "jquery.min.js": {
-      "path": "spike/m0/vendor/jquery.min.js",
+      "path": "vendor/jquery.min.js",
       "url": "https://cdnjs.cloudflare.com/ajax/libs/jquery/2.2.0/jquery.min.js",
       "sha256": "8a102873a33f24f7eb22221e6b23c4f718e29f85168ecc769a35bfaed9b12cce",
       "bytes": 85589,
@@ -104,7 +104,7 @@
       "state": "present"
     },
     "jquery-ui.min.js": {
-      "path": "spike/m0/vendor/jquery-ui.min.js",
+      "path": "vendor/jquery-ui.min.js",
       "url": "https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min.js",
       "sha256": "28ce75d953678c4942df47a11707a15e3c756021cf89090e3e6aa7ad6b6971c3",
       "bytes": 253669,
@@ -113,7 +113,7 @@
       "state": "present"
     },
     "jquery-ui.min.css": {
-      "path": "spike/m0/vendor/jquery-ui.min.css",
+      "path": "vendor/jquery-ui.min.css",
       "url": "https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min.css",
       "sha256": "ac1c8f94750b39b12327a5d0c56fdf946dabfb6d91e5d2a202879ff9a5d67e29",
       "bytes": 32076,
@@ -122,7 +122,7 @@
       "state": "present"
     },
     "polyfill.min.js": {
-      "path": "spike/m0/vendor/polyfill.min.js",
+      "path": "vendor/polyfill.min.js",
       "url": "https://cdnjs.cloudflare.com/ajax/libs/babel-polyfill/7.6.0/polyfill.min.js",
       "sha256": "ffd69fe47638ddab4d2d063208bcba11e4ef1eed27b4101de18c9ac3ab5587f7",
       "bytes": 99342,
@@ -131,7 +131,7 @@
       "state": "present"
     },
     "url-search-params.js": {
-      "path": "spike/m0/vendor/url-search-params.js",
+      "path": "vendor/url-search-params.js",
       "url": "https://cdnjs.cloudflare.com/ajax/libs/url-search-params/1.1.0/url-search-params.js",
       "sha256": "bc0e68d47465158820ae7d321bee9b286967967f5f5b18b84bd72fce8e8594ac",
       "bytes": 6792,
@@ -140,7 +140,7 @@
       "state": "present"
     },
     "psychojs-2026.2.3.iife.js": {
-      "path": "spike/m0/vendor/psychojs-2026.2.3.iife.js",
+      "path": "vendor/psychojs-2026.2.3.iife.js",
       "url": "https://lib.pavlovia.org/psychojs-2026.2.3.iife.js",
       "sha256": "7bcbb818d39a18a8b5948bcd2e787e8e7e6dcc55efe726eb0942f3060e746077",
       "bytes": 2626793,
@@ -149,7 +149,7 @@
       "state": "present"
     },
     "psychojs-2026.2.3.css": {
-      "path": "spike/m0/vendor/psychojs-2026.2.3.css",
+      "path": "vendor/psychojs-2026.2.3.css",
       "url": "https://lib.pavlovia.org/psychojs-2026.2.3.css",
       "sha256": "e08d00bcd1562c1628678ef896fc2a926f7f0763990ad61dfce0cc2d77de5c85",
       "bytes": 9666,
@@ -158,7 +158,7 @@
       "state": "present"
     },
     "jquery-3.6.0.min.js": {
-      "path": "spike/m0/vendor/jquery-3.6.0.min.js",
+      "path": "vendor/jquery-3.6.0.min.js",
       "url": "https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js",
       "sha256": "ff1523fb7389539c84c65aba19260648793bb4f5e29329d2ee8804bc37a3fe6e",
       "bytes": 89501,
@@ -167,7 +167,7 @@
       "state": "present"
     },
     "jquery-ui-1.12.1.min.js": {
-      "path": "spike/m0/vendor/jquery-ui-1.12.1.min.js",
+      "path": "vendor/jquery-ui-1.12.1.min.js",
       "url": "https://cdn.jsdelivr.net/npm/jquery-ui-dist@1.12.1/jquery-ui.min.js",
       "sha256": "28ce75d953678c4942df47a11707a15e3c756021cf89090e3e6aa7ad6b6971c3",
       "bytes": 253669,
@@ -176,7 +176,7 @@
       "state": "present"
     },
     "jquery-ui-1.12.1.min.css": {
-      "path": "spike/m0/vendor/jquery-ui-1.12.1.min.css",
+      "path": "vendor/jquery-ui-1.12.1.min.css",
       "url": "https://cdn.jsdelivr.net/npm/jquery-ui-dist@1.12.1/jquery-ui.min.css",
       "sha256": "ac1c8f94750b39b12327a5d0c56fdf946dabfb6d91e5d2a202879ff9a5d67e29",
       "bytes": 32076,
@@ -185,7 +185,7 @@
       "state": "present"
     },
     "preloadjs-1.0.1.min.js": {
-      "path": "spike/m0/vendor/preloadjs-1.0.1.min.js",
+      "path": "vendor/preloadjs-1.0.1.min.js",
       "url": "https://cdn.jsdelivr.net/npm/preloadjs@1.0.1/lib/preloadjs.min.js",
       "sha256": "659aba74af795768d9d8d2ed688e49cd5f47d9425d5a1630329a845759b4591d",
       "bytes": 65320,

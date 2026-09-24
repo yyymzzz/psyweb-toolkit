@@ -18,7 +18,7 @@ $ErrorActionPreference = 'Stop'
 $ROOT = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $SITE = Join-Path $ROOT 'site'
 $ASSETS = Join-Path $SITE 'assets'
-$VENDOR = Join-Path $ROOT 'spike\m0\vendor'
+$VENDOR = Join-Path $ROOT 'vendor'
 
 if (-not (Test-Path (Join-Path $SITE 'index.html'))) { throw "缺少 site\index.html" }
 if (-not (Test-Path (Join-Path $SITE 'pack-core.js'))) { throw "缺少 site\pack-core.js" }
