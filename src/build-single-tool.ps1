@@ -44,6 +44,10 @@ function Read-Text($p, $what) {
 Write-Host '== 2/3 读取页面与素材 =='
 $html = Read-Text (Join-Path $SITE 'index.html') 'site\index.html'
 $core = Read-Text (Join-Path $SITE 'pack-core.js') 'site\pack-core.js'
+# 这两个是 src/ 下的**同一份**文件被 build-site.ps1 拷过来的；内联后由
+# verify-single-tool.js 与 src/ 源文件逐字符比对（防止两份实现漂移）。
+$refClosure = Read-Text (Join-Path $SITE 'assets\ref-closure.js') 'site\assets\ref-closure.js'
+$xlsxRows = Read-Text (Join-Path $SITE 'assets\xlsx-rows-pako.js') 'site\assets\xlsx-rows-pako.js'
 $assets = [ordered]@{
     psychoJs    = 'assets\psychojs-2026.2.3.iife.js'
     css         = 'assets\psychojs-2026.2.3.css'
@@ -86,18 +90,29 @@ function Protect-Inline([string]$s) {
     return $s.Replace('</', '<\/').Replace('<!--', '\x3C!--')
 }
 $jsonSafe = Protect-Inline $json
-$coreSafe = Protect-Inline $core
-$inlineCore = "<script>`n" + $coreSafe + "`n</script>`n" +
+# 三个脚本块一律**不加换行**地内联：这样 verify-single-tool.js 可以直接拿
+# Protect-Inline(源文件) 与块内容做逐字符相等判断（多一个换行就不好比了）。
+$inlineCore = "<script>" + (Protect-Inline $core) + "</script>" +
+              "<script>" + (Protect-Inline $refClosure) + "</script>" +
+              "<script>" + (Protect-Inline $xlsxRows) + "</script>" +
               "<script>window.PSYWEB_ASSETS = " + $jsonSafe + ";</script>"
 # ⚠️ 必须用 [string]::Replace（字面量替换），**不能用 -replace**：
 #    -replace 的替换串把 $1/$&/$' 当特殊符号，而被内联的代码里含 $ 字符
 #    （与早先 String.replace(fn) 回调签名那次是同一类转义坑，实测踩过两次了）
-$marker = '<script src="./pack-core.js"></script>'
-if (-not $html.Contains($marker)) { throw '没找到 <script src="./pack-core.js"></script>，无法内联' }
+# ⚠️ 标记必须是**整段三行**，顺序与 index.html 一致；匹配不到就抛，不做"部分替换"。
+$nl = [string][char]10
+$marker = '<script src="./assets/ref-closure.js"></script>' + $nl +
+          '<script src="./assets/xlsx-rows-pako.js"></script>' + $nl +
+          '<script src="./pack-core.js"></script>'
+if (-not $html.Contains($marker)) { throw '没找到三个外链 script 标记（ref-closure / xlsx-rows-pako / pack-core），无法内联' }
 $html = $html.Replace($marker, $inlineCore)
 if ($html.IndexOf('PsywebPack') -lt 0) { throw '内联 pack-core.js 失败（页面里没出现 PsywebPack）' }
+if ($html.IndexOf('PsywebRefClosure') -lt 0) { throw '内联 ref-closure.js 失败（页面里没出现 PsywebRefClosure）' }
+if ($html.IndexOf('PsywebXlsxRows') -lt 0) { throw '内联 xlsx-rows-pako.js 失败（页面里没出现 PsywebXlsxRows）' }
 if ($html.IndexOf('window.PSYWEB_ASSETS') -lt 0) { throw '注入内联素材失败' }
-if ($html.IndexOf('src="./pack-core.js"') -ge 0) { throw '外链 script 仍存在（替换不完整）' }
+foreach ($m in @('src="./pack-core.js"', 'src="./assets/ref-closure.js"', 'src="./assets/xlsx-rows-pako.js"')) {
+    if ($html.IndexOf($m) -ge 0) { throw "外链 script 仍存在（替换不完整）：$m" }
+}
 
 New-Item -ItemType Directory -Force -Path $OUTDIR | Out-Null
 [System.IO.File]::WriteAllText($OUT, $html, (New-Object System.Text.UTF8Encoding($false)))

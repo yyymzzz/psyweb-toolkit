@@ -11,8 +11,12 @@
  *   ③ 在线版要承担服务器/备案/数据出境 —— 而本工具的全部价值就是"数据不出本机"
  * 为什么不用 Electron：几百 MB 依赖，而这里只需要一个 http 服务和一次 spawn。
  *
- * 零第三方依赖（只用 Node 内置模块），便于随仓库分发。
+ * 零第三方依赖（只用 Node 内置模块 + vendor/ 里的 SheetJS），便于随仓库分发。
  * 用法: node src/tool-server.js [--port 7788] [--no-open]
+ *
+ * ⚠️ 页面脚本不再内嵌在本文件的模板字符串里（历史事故见 src/tool-page.js 头注）。
+ *    本文件只负责**把磁盘上的真实文件整段内联**进页面，并在内联前做危险序列检查；
+ *    内联结果的正确性由 spike/m0/src/verify-tool-page.js 逐字符比对 + 强制编译来保证。
  * ========================================================================== */
 'use strict';
 const http = require('http');
@@ -23,7 +27,8 @@ const { spawnSync, execFile } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT_DIR = path.join(ROOT, '输出');
-const MAX_BODY = 400 * 1024 * 1024;      // 400 MB 上限（实验资源一般几 MB~几十 MB）
+const MAX_BODY = 400 * 1024 * 1024;      // 转换请求上限（物理兜底，不是筛选手段）
+const MAX_TABLES_BODY = 64 * 1024 * 1024; // /api/tables 只传条件表，体积很小
 
 function arg(name, def) {
   const i = process.argv.indexOf('--' + name);
@@ -56,7 +61,19 @@ function send(res, code, body, type) {
 }
 
 // ---------------------------------------------------------------- 页面
+/** 读一个要内联进页面的源文件，并挡住会提前截断 <script> 的序列 */
+function readInline(name) {
+  const p = path.join(__dirname, name);
+  if (!fs.existsSync(p)) throw new Error('页面内联源文件缺失: ' + p + '（仓库不完整？）');
+  const code = fs.readFileSync(p, 'utf8');
+  if (/<\/script/i.test(code)) throw new Error(name + ' 含 "</script" —— 内联到页面会提前截断脚本块');
+  if (/<!--/.test(code)) throw new Error(name + ' 含 "<!--" —— HTML 注释序会在脚本块内引起歧义');
+  return code;
+}
+
 function pageHtml() {
+  const refClosureSrc = readInline('ref-closure.js');
+  const toolPageSrc = readInline('tool-page.js');
   return `<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>psyweb 转换工具</title>
 <style>
@@ -114,158 +131,49 @@ a{color:#2f6fed}
     ③ 对方把截图或 CSV 发回 → 用 <code>site/collector.html</code> 拖进去即可还原成表格</div>
   </div>
 </div>
-<script>
-var picked = [];
-function log(s, cls){ var d=document.getElementById('log'); var n=document.createElement('div'); n.className=cls||''; n.textContent=s; d.appendChild(n); d.scrollTop=d.scrollHeight; }
+<script>${refClosureSrc}</script>
+<script>${toolPageSrc}</script>
+</body></html>`;
+}
 
-// base64 必须**分块**转换。
-// 实测事故：btoa(String.fromCharCode.apply(null, u8)) 对 >64KB 的文件会抛
-// RangeError: Maximum call stack size exceeded（apply 传超大数组参数爆栈），
-// 而读取循环当时在 try/catch 之外 —— 异常被静默吞掉，按钮一直灰着、日志停在
-// "读取文件…"，用户看到的就是"点了没反应"。
-function toB64(u8){
-  var CH = 0x8000, out = '';
-  for (var i = 0; i < u8.length; i += CH) out += String.fromCharCode.apply(null, u8.subarray(i, i + CH));
-  return btoa(out);
-}
-// 只收"实验真正需要"的文件；把历史数据/截图目录/超大文件挡在门外
-// 注意：本段代码位于模板字符串内部，正则里的反斜杠必须**双写**（\\. 与 \\/），
-// 否则模板字符串会把反斜杠吃掉，生成出 /(^|/ 这种截断的正则 →
-// 整页脚本 SyntaxError、所有函数都没定义（实测被探针抓到）。
-var KEEP_EXT = /\\.(psyexp|png|jpe?g|gif|bmp|webp|mp3|wav|ogg|mp4|mov|avi|xlsx?|csv|tsv|odp|txt)$/i;
-var SKIP_DIR = /(^|\\/)(data|__pycache__|node_modules|\\.git|实验截图|_调试残留)/i;
-var MAX_FILE = 50 * 1024 * 1024;
-function classify(list){
-  var keep = [], skipDir = 0, skipExt = 0, skipBig = 0;
-  list.forEach(function(f){
-    var rel = f.relPath || f.name;
-    if (SKIP_DIR.test(rel)) { skipDir++; return; }
-    if (!KEEP_EXT.test(f.name)) { skipExt++; return; }
-    if (f.size > MAX_FILE) { skipBig++; return; }
-    keep.push(f);
-  });
-  return { keep: keep, skipDir: skipDir, skipExt: skipExt, skipBig: skipBig };
-}
-function setPicked(files){
-  picked = Array.prototype.slice.call(files);
-  var c = classify(picked);
-  var psy = c.keep.filter(function(f){ return /\\.psyexp$/i.test(f.name); });
-  var mb = c.keep.reduce(function(a,f){ return a + (f.size||0); }, 0) / 1048576;
-  document.getElementById('picked').textContent = picked.length
-    ? ('共选 ' + picked.length + ' 个文件 → 需要上传 ' + c.keep.length + ' 个（' + mb.toFixed(1) + ' MB）'
-       + '，已跳过 ' + (c.skipDir + c.skipExt + c.skipBig) + ' 个'
-       + '（data 等目录 ' + c.skipDir + ' / 非实验文件 ' + c.skipExt + ' / 超大 ' + c.skipBig + '）')
-    : '尚未选择文件';
-  document.getElementById('mainFile').textContent = psy.length ? psy[0].name : '（没找到 .psyexp —— 请把实验文件夹整个拖进来）';
-  document.getElementById('go').disabled = psy.length === 0;
-  if (psy.length && !document.getElementById('title').value) {
-    document.getElementById('title').value = psy[0].name.replace(/\\.psyexp$/i,'');
-  }
-}
-fetch('/api/env').then(function(r){return r.json();}).then(function(e){
-  // 界面不要暴露"某台机器的绝对路径"——分发出去后那是别人的机器。
-  // 只报"找到没有 + 版本"，路径折进小字里供排查。
-  document.getElementById('env').innerHTML = e.python
-    ? ('已找到本机 <b>PsychoPy ' + e.version + '</b>　·　官方编译器就绪（可直接转换 .psyexp）' +
-       '<div style="font-size:12px;opacity:.65;margin-top:3px">' + e.python + '</div>')
-    : ('<span class="bad">本机没找到 PsychoPy。</span> 两条路可选：' +
-       '<div style="font-size:13px;margin-top:4px">' +
-       '① 安装 PsychoPy（<a href="https://www.psychopy.org/download.html" target="_blank">官网下载</a>，standalone 版自带 Python，装完重开本工具）；<br>' +
-       '② 不装也行：让对方在 PsychoPy Builder 里点一次 <b>Export HTML</b>，把导出的文件夹拖进来（走兜底路径，不需要 Python）。' +
-       '</div>');
-}).catch(function(){ document.getElementById('env').textContent = '环境检测失败'; });
-
-var drop = document.getElementById('drop');
-['dragenter','dragover'].forEach(function(t){ drop.addEventListener(t, function(e){ e.preventDefault(); drop.classList.add('hot'); }); });
-['dragleave','drop'].forEach(function(t){ drop.addEventListener(t, function(e){ e.preventDefault(); drop.classList.remove('hot'); }); });
-drop.addEventListener('drop', function(e){
-  var items = e.dataTransfer.items, out = [], pending = 0;
-  // 支持"拖文件夹"：用 webkitGetAsEntry 递归取文件并保留相对路径
-  if (items && items.length && items[0].webkitGetAsEntry) {
-    for (var i=0;i<items.length;i++){
-      var entry = items[i].webkitGetAsEntry();
-      if (!entry) continue;
-      pending++;
-      (function(ent){ walk(ent, '', function(list){ out = out.concat(list); if(--pending===0) setPicked(out); }); })(entry);
-    }
-  } else { setPicked(e.dataTransfer.files); }
-});
-function walk(entry, prefix, done){
-  if (entry.isFile) {
-    entry.file(function(f){ try { Object.defineProperty(f, 'relPath', { value: prefix + f.name }); } catch(e){} done([f]); });
-  } else if (entry.isDirectory) {
-    var reader = entry.createReader(), all = [];
-    var read = function(){ reader.readEntries(function(batch){
-      if (!batch.length) { var i=0; (function next(){ if(i>=all.length) return done([]); walk(all[i++], prefix + entry.name + '/', function(l){ all.lists = (all.lists||[]).concat(l); next(); }); })(); return; }
-      all = all.concat(batch); read();
-    }); };
-    // 简化：一次性收集目录项后逐个走
-    reader.readEntries(function first(batch){
-      if (!batch.length) return done([]);
-      var files = [], dirs = [], todo = batch.length, more = true;
-      var collect = function(list){ list.forEach(function(en){ (en.isFile?files:dirs).push(en); }); if(--todo===0){ if(more) readMore(); else finish(); } };
-      var readMore = function(){ reader.readEntries(function(b){ if(!b.length){ more=false; finish(); return; } todo=b.length; b.forEach(collect); }); };
-      var finish = function(){
-        var out = [], t = files.length + dirs.length;
-        if (!t) return done([]);
-        files.forEach(function(en){ walk(en, prefix + entry.name + '/', function(l){ out = out.concat(l); if(--t===0) done(out); }); });
-        dirs.forEach(function(en){ walk(en, prefix + entry.name + '/', function(l){ out = out.concat(l); if(--t===0) done(out); }); });
-      };
-      batch.forEach(collect);
+// ---------------------------------------------------------------- 条件表解析
+/** 把 xlsx/xls 解成二维数组交给浏览器，让浏览器侧的 ref-closure 拿到"列值"。
+ *  为什么放服务端：SheetJS 已经在 vendor/ 里（pack-portable 本来就要用），
+ *  浏览器侧就不必再引入解压/解包逻辑 —— 网页版那边再用 pako 补上同一接口。 */
+function readXlsxRows(absPath) {
+  const XLSX = require(path.join(ROOT, 'vendor', 'xlsx.full.min.js'));
+  const wb = XLSX.readFile(absPath);
+  const out = [];
+  wb.SheetNames.forEach((sn) => {
+    XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: false }).forEach((row) => {
+      if (row && row.length) out.push(row.map((v) => (v == null ? '' : String(v))));
     });
-  } else done([]);
+  });
+  return out;
 }
-document.getElementById('pickDir').onclick = function(){ document.getElementById('dir').click(); };
-document.getElementById('pickFiles').onclick = function(){ document.getElementById('files').click(); };
-document.getElementById('dir').onchange = function(e){
-  var fs2 = Array.prototype.slice.call(e.target.files);
-  fs2.forEach(function(f){ try { Object.defineProperty(f,'relPath',{value: f.webkitRelativePath || f.name}); } catch(err){} });
-  setPicked(fs2);
-};
-document.getElementById('files').onchange = function(e){ setPicked(e.target.files); };
 
-document.getElementById('go').onclick = async function(){
-  var btn = this; btn.disabled = true;
-  // 整个流程都包在 try/finally 里：哪怕是读文件阶段出错，也要把错误显示出来
-  // 并把按钮恢复——绝不能出现"点了没反应、按钮永远灰着"（实测踩过）。
+function handleTables(payload) {
+  const log = [];
+  const rows = {};
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'psyweb-tables-'));
   try {
-    var c = classify(picked);
-    var skipped = c.skipDir + c.skipExt + c.skipBig;
-    log('读取 ' + c.keep.length + ' 个文件' + (skipped ? ('（已跳过 ' + skipped + ' 个无关文件：data 等目录 ' + c.skipDir + ' / 非实验文件 ' + c.skipExt + ' / 超大 ' + c.skipBig + '）') : '') + '…');
-    if (!c.keep.length) throw new Error('没有可上传的文件（是不是只选了 data 目录？请把整个实验文件夹拖进来）');
-
-    var payload = { title: document.getElementById('title').value || '在线实验', files: [] };
-    var total = 0;
-    for (var i = 0; i < c.keep.length; i++) {
-      var f = c.keep[i];
-      var buf = await f.arrayBuffer();
-      total += buf.byteLength;
-      payload.files.push({ name: f.relPath || f.name, b64: toB64(new Uint8Array(buf)) });
-      if ((i + 1) % 10 === 0 || i === c.keep.length - 1) {
-        log('  已读取 ' + (i + 1) + '/' + c.keep.length + '（' + (total / 1048576).toFixed(1) + ' MB）');
+    for (const f of (payload.files || [])) {
+      const rel = String(f.rel || f.name || '').replace(/\\/g, '/').replace(/^\/+/, '');
+      if (!rel || rel.indexOf('..') >= 0) { log.push({ line: '⚠️ 跳过非法路径: ' + rel, cls: 'warn' }); continue; }
+      const abs = path.join(work, rel);
+      try {
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.writeFileSync(abs, Buffer.from(f.b64, 'base64'));
+        rows[rel] = readXlsxRows(abs);
+      } catch (e) {
+        log.push({ line: '⚠️ 条件表解析失败 ' + rel + '：' + e.message, cls: 'warn' });
+        rows[rel] = null;
       }
     }
-    var body = JSON.stringify(payload);
-    log('已打包 ' + payload.files.length + ' 个文件（原始 ' + (total / 1048576).toFixed(1) + ' MB，传输 ' + (body.length / 1048576).toFixed(1) + ' MB），开始转换…');
-    if (body.length > 300 * 1048576) throw new Error('上传体积过大，请只选择实验真正需要的文件');
-
-    var r = await fetch('/api/convert', { method:'POST', headers:{'Content-Type':'application/json'}, body: body });
-    var j = await r.json();
-    (j.log || []).forEach(function(l){ log(l.line, l.cls); });
-    if (j.ok) {
-      log('✅ 完成：' + j.outName + '（' + (j.size/1048576).toFixed(2) + ' MB）', 'ok');
-      var a = document.createElement('a'); a.href = j.url; a.download = j.outName; a.textContent = '点这里下载 ' + j.outName;
-      document.getElementById('log').appendChild(a);
-      log('也可以直接从磁盘取：' + j.outPath, 'ok');
-    } else { log('❌ 转换失败，请看上面日志', 'bad'); }
-  } catch(e) {
-    log('❌ 出错：' + (e && (e.message || e.name) || e), 'bad');
-    log('   （把这段错误截图发给开发者即可定位；数据没有被上传到任何地方）', 'warn');
   } finally {
-    btn.disabled = false;
+    try { fs.rmSync(work, { recursive: true, force: true }); } catch (e) {}
   }
-};
-</script></body></html>`;
+  return { ok: true, rows, log };
 }
 
 // ---------------------------------------------------------------- 转换
@@ -319,6 +227,17 @@ function doConvert(payload) {
   };
 }
 
+// ---------------------------------------------------------------- 请求体
+function readBody(req, res, limit, onDone) {
+  let body = '', size = 0, killed = false;
+  req.on('data', (c) => {
+    size += c.length;
+    if (size > limit) { killed = true; req.destroy(); return; }
+    body += c;
+  });
+  req.on('end', () => { if (!killed) onDone(body); });
+}
+
 // ---------------------------------------------------------------- 服务
 const server = http.createServer((req, res) => {
   // 只接受本机来源的同源请求。
@@ -338,7 +257,8 @@ const server = http.createServer((req, res) => {
     }
   }
   if (req.method === 'GET' && (req.url === '/' || req.url.startsWith('/?'))) {
-    return send(res, 200, pageHtml(), 'text/html; charset=utf-8');
+    try { return send(res, 200, pageHtml(), 'text/html; charset=utf-8'); }
+    catch (e) { return send(res, 500, '页面生成失败: ' + e.message, 'text/plain; charset=utf-8'); }
   }
   if (req.method === 'GET' && req.url === '/api/env') {
     const py = detectPsychoPy();
@@ -354,14 +274,18 @@ const server = http.createServer((req, res) => {
     });
     return fs.createReadStream(abs).pipe(res);
   }
-  if (req.method === 'POST' && req.url === '/api/convert') {
-    let body = '', size = 0;
-    req.on('data', (c) => {
-      size += c.length;
-      if (size > MAX_BODY) { req.destroy(); return; }
-      body += c;
+  if (req.method === 'POST' && req.url === '/api/tables') {
+    return readBody(req, res, MAX_TABLES_BODY, (body) => {
+      try {
+        const payload = JSON.parse(body);
+        send(res, 200, JSON.stringify(handleTables(payload)));
+      } catch (e) {
+        send(res, 500, JSON.stringify({ ok: false, error: '条件表解析失败: ' + e.message }));
+      }
     });
-    req.on('end', () => {
+  }
+  if (req.method === 'POST' && req.url === '/api/convert') {
+    return readBody(req, res, MAX_BODY, (body) => {
       try {
         const payload = JSON.parse(body);
         if (!payload.files || !payload.files.length) return send(res, 400, JSON.stringify({ ok: false, log: [{ line: '❌ 没有收到文件', cls: 'bad' }] }));
@@ -371,7 +295,6 @@ const server = http.createServer((req, res) => {
         send(res, 500, JSON.stringify({ ok: false, log: [{ line: '❌ ' + e.message, cls: 'bad' }] }));
       }
     });
-    return;
   }
   send(res, 404, JSON.stringify({ error: 'not found' }));
 });

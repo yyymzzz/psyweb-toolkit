@@ -2,8 +2,14 @@
 /* ============================================================================
  * build-collector —— 生成主试端回收器（单文件、离线可用）
  * ----------------------------------------------------------------------------
- * 产物: site/collector.html —— 主试双击即用：把被试发来的二维码截图拖进去，
+ * 产物: tools/collector.html —— 主试双击即用：把被试发来的二维码截图拖进去，
  *       自动解码 → 分组 → 还原 CSV → 累积多名被试 → 一键导出合并表。
+ *       ⚠️ 文档里有时写 site/collector.html：公开站点上它是被
+ *       scripts/make-public-repo.ps1 从 tools/ 拷过去的，仓库内的真实产物是 tools/。
+ *       别再"统一"成 site/ —— 历史上那次路径统一补丁的模式写的是
+ *       `tools/collector.html`（带斜杠），而这里其实是 `'tools','collector.html'`
+ *       （带逗号引号），**模式没命中、补丁静默返回**，导致 make-dist.ps1 从
+ *       2026-09-24 起一上来就抛「缺少必要文件：site\collector.html」而无人察觉。
  * 为什么也做成单文件：主试端同样不该依赖服务器；而且它要能跟着数据一起归档。
  * ========================================================================== */
 'use strict';
@@ -19,7 +25,8 @@ function read(p, what) {
 }
 
 const jsqr = read(path.join(ROOT, 'node_modules', 'jsqr', 'dist', 'jsQR.js'), 'jsQR 浏览器构建（npm i jsqr）');
-const pako = read(path.join(ROOT, 'spike', 'm0', 'vendor', 'pako.min.js'), 'pako（scripts/fetch-vendor.ps1）');
+// 同 pack-portable.js：vendor 已收敛到仓库根，不要再写 spike/m0/vendor（见 src/verify-vendor-refs.js）
+const pako = read(path.join(ROOT, 'vendor', 'pako.min.js'), 'pako（scripts/fetch-vendor.ps1）');
 const core = read(path.join(ROOT, 'src', 'collector-core.js'), 'collector-core.js');
 const page = read(path.join(ROOT, 'src', 'collector-page.js'), 'collector-page.js');
 

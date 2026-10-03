@@ -671,6 +671,8 @@
   </main>
 
 
+<script src="./assets/ref-closure.js"></script>
+<script src="./assets/xlsx-rows-pako.js"></script>
 <script src="./pack-core.js"></script>
 <script>
 (function () {
@@ -902,67 +904,290 @@
     return out;
   }
 
+  /* ==========================================================================
+   * 选择策略：引用闭包（取代黑名单）
+   * --------------------------------------------------------------------------
+   * 旧：只挡掉 data/ 和少数扩展名，其余全收 —— 拖进一个 7 万文件的项目目录会把
+   *     几十万文件全读进内存（本地工具那边实测 73,412 个 / 416.7 MB）。
+   * 新：入口 = {主脚本 *.js, .psyexp(若有)}；解析它们的引用
+   *     （resources 清单 / 循环 conditionsFile / 组件路径表达式 / CodeComponent
+   *      路径常量），再用条件表**列值**反推出动态引用的媒体，递归到不动点。
+   *     只读这些文件。不靠目录布局、不靠扩展名白名单。
+   * 兜底：解析不出引用时退回旧的保守筛选，并在日志里明说（不静默降级）。
+   * 解析器与本地工具是**同一个文件** src/ref-closure.js（UMD），不存在两份实现。
+   * ======================================================================== */
+  var RC = window.PsywebRefClosure;
+  var XR = window.PsywebXlsxRows;
+  var index = [];          // [{rel,name,lower,file?,entry?}] 惰性索引：拖拽路径下不预先取 File
+  var byRel = {}, byBase = {};
+
+  function idxPush(rel, file, entry) {
+    index.push({
+      rel: rel, name: (RC ? RC.baseName(rel) : rel),
+      lower: String(rel).toLowerCase(), file: file || null, entry: entry || null
+    });
+  }
+  function readItem(it) {
+    if (it.file) return Promise.resolve(it.file);
+    return new Promise(function (res, rej) { it.entry.file(res, rej); });
+  }
+  function readItemText(it) { return readItem(it).then(function (f) { return f.text(); }); }
+  function readItemU8(it) {
+    return readItem(it).then(function (f) { return f.arrayBuffer(); })
+      .then(function (b) { return new Uint8Array(b); });
+  }
+  function buildLookup() {
+    byRel = {}; byBase = {};
+    index.forEach(function (it) {
+      if (!byRel[it.lower]) byRel[it.lower] = it;
+      var b = (RC ? RC.baseName(it.rel) : it.name).toLowerCase();
+      (byBase[b] = byBase[b] || []).push(it);
+    });
+  }
+  /** 把"相对基准目录"的引用路径解析成索引条目；找不到就按文件名兜一次（并记日志） */
+  function findInIndex(baseDir, ref, say) {
+    var full = RC.joinPath(baseDir, ref);
+    var hit = byRel[full.toLowerCase()];
+    if (hit) return hit;
+    var b = (RC ? RC.baseName(ref) : ref).toLowerCase();
+    var cands = byBase[b];
+    if (cands && cands.length) {
+      var sorted = cands.slice().sort(function (a, c) {
+        return a.rel.length - c.rel.length || (a.rel < c.rel ? -1 : a.rel > c.rel ? 1 : 0);
+      });
+      if (say) say('   · 「' + ref + '」按代码给出的路径没找到，改用同名文件 ' + sorted[0].rel
+        + (sorted.length > 1 ? '（同名共 ' + sorted.length + ' 份）' : ''), 'warn');
+      return sorted[0];
+    }
+    return null;
+  }
+  function parseCsvRows(text) {
+    return String(text).split(/\r?\n/).filter(function (l) { return l.trim() !== ''; })
+      .map(function (l) { return l.split(/[,\t]/); });
+  }
+  var _pako = null;
+  /** pako 在页面里是**文本素材**（pack-core 要把它内联进产物），所以这里取来执行一次拿对象 */
+  function getPako(assets) {
+    if (_pako) return _pako;
+    if (window.pako) { _pako = window.pako; return _pako; }
+    if (assets && assets.pako) {
+      try { (new Function(assets.pako)).call(window); _pako = window.pako || null; }
+      catch (e) { _pako = null; }
+    }
+    return _pako;
+  }
+
+  /** 精确选择：入口 → 引用闭包 → 需要读的文件清单 */
+  async function planPrecise(assets) {
+    var notes = [];
+    var say = function (s, cls) { notes.push(s); log(s, cls); };
+    var legacy = index.filter(function (it) { return /-legacy-browsers\.js$/i.test(it.name); });
+    var plain = index.filter(function (it) {
+      return /\.js$/i.test(it.name) && !/-legacy-browsers\.js$/i.test(it.name) && !/(^|\/)lib\//i.test(it.rel);
+    });
+    var main = legacy[0] || plain[0] || null;
+    var psy = index.filter(function (it) { return /\.psyexp$/i.test(it.name); })[0] || null;
+    if (!main) return { source: 'none' };
+
+    var jsText = await readItemText(main);
+    say('   · 主脚本 ' + main.rel + '（' + (jsText.length / 1024).toFixed(0) + ' KB）'
+      + (legacy[0] ? '（legacy 版，兼容性最好）' : '（module 版）'));
+    var psyText = null;
+    if (psy) { psyText = await readItemText(psy); say('   · psyexp ' + psy.rel + '（可提供比清单更完整的引用）'); }
+    // 引用路径以 psyexp 所在目录为基准（PsychoPy 运行时的 _thisDir 就是脚本目录）；
+    // 没有 psyexp 时以主脚本所在目录为基准（导出文件夹的相对路径就是相对它的）。
+    var baseDir = RC.dirName(psy ? psy.rel : main.rel);
+    var exists = function (ref) { return !!byRel[RC.joinPath(baseDir, ref).toLowerCase()]; };
+    var resolveOnce = function (rows) {
+      return RC.resolve({
+        psyexpRel: psy ? psy.name : main.name,
+        psyexpText: psyText, jsText: jsText,
+        getTableRows: rows ? function (rel) { return rows[rel] !== undefined ? rows[rel] : null; } : null,
+        exists: rows ? exists : null
+      });
+    };
+
+    // ① 先只解析入口（不读条件表），得到"要读哪几张表"
+    var p1 = resolveOnce(null);
+    var tableRefs = (p1.tables || []).slice();
+    p1.notes.forEach(function (n) { if (/清单|常量/.test(n)) say('   · ' + n); });
+
+    // ② 读这些表（csv 本地解析；xlsx 用 pako 解包，与 Node 侧 SheetJS 对拍一致）
+    var rows = {}, jobs = [];
+    tableRefs.forEach(function (ref) {
+      var it = findInIndex(baseDir, ref, say);
+      if (!it) { say('   · ⚠️ 条件表没找到：' + ref, 'warn'); return; }
+      jobs.push({ ref: ref, it: it });
+    });
+    var needPako = false;
+    for (var i = 0; i < jobs.length; i++) {
+      var j = jobs[i];
+      if (/\.(csv|tsv)$/i.test(j.it.name)) {
+        rows[j.ref] = parseCsvRows(await readItemText(j.it));
+      } else if (/\.(xlsx|xls)$/i.test(j.it.name)) {
+        needPako = true;
+        var pk = getPako(assets);
+        if (!pk) { say('   · ⚠️ pako 不可用，无法读 ' + j.ref + ' 的内容', 'warn'); rows[j.ref] = null; continue; }
+        var u8 = await readItemU8(j.it);
+        rows[j.ref] = (XR ? XR.fromBytes(u8, pk) : null);
+        if (!rows[j.ref]) say('   · ⚠️ 解不开 xlsx：' + j.ref, 'warn');
+      } else {
+        rows[j.ref] = null;
+      }
+    }
+    if (needPako && XR) log('   （xlsx 用 pako 在浏览器里解包，与 Node 侧 SheetJS 结果对拍一致）');
+
+    // ③ 完整解析
+    var res = resolveOnce(rows);
+    res.notes.forEach(function (n) { if (!/清单|常量/.test(n)) say('   · ' + n, /⚠️/.test(n) ? 'warn' : ''); });
+    if (res.degraded) return { source: 'fallback', notes: notes, res: res, main: main, baseDir: baseDir };
+
+    // ④ 引用 → 索引条目
+    //    记下每个条目对应的**引用路径**（r.path）：它才是运行时真正会请求的资源名。
+    //    交给 pack-core 时必须用这个，不能用文件名（见 pack-core 的 2c 段注释）。
+    var out = [], seen = {}, missing = [], needSet = {};
+    res.refs.forEach(function (r) {
+      if (r.missing) return;
+      var it = findInIndex(baseDir, r.path, say);
+      if (!it) { missing.push(r.path); return; }
+      if (seen[it.rel]) return;
+      seen[it.rel] = 1;
+      out.push({ rel: it.rel, name: it.name, refPath: r.path, role: r.role, file: it.file, entry: it.entry });
+      needSet[it.rel] = 1;
+    });
+    if (missing.length) say('   · ⚠️ ' + missing.length + ' 个引用的文件在所选目录里不存在：'
+      + missing.slice(0, 5).join('、') + (missing.length > 5 ? ' …' : ''), 'warn');
+
+    // ⑤ 透明化：被"看一眼像条件表"却没被任何引用触及的文件，明说跳过（用户可据此质疑）
+    var skippedTables = index.filter(function (it) {
+      return /\.(xlsx?|csv|tsv|odp)$/i.test(it.name) && !needSet[it.rel];
+    }).map(function (it) { return it.rel; });
+    if (skippedTables.length) {
+      say('   · 跳过 ' + skippedTables.length + ' 个未被任何引用触及的条件表：'
+        + skippedTables.slice(0, 4).join('、') + (skippedTables.length > 4 ? ' …' : '')
+        + '（它们没有被 loop/代码/清单引用；若实验确实用到，说明引用是运行期拼出来的）', 'warn');
+    }
+    return { source: 'closure', items: out, notes: notes, res: res, main: main, baseDir: baseDir };
+  }
+
+  /** 保守筛选（兜底）：与旧行为一致 —— 会多读，但不会丢 */
   function classify(list) {
     var keep = [], skip = 0;
     list.forEach(function (f) {
       var rel = f.relPath || f.name;
       if (/(^|\/)(data|__pycache__|node_modules|\.git|实验截图|_调试残留)(\/|$)/i.test(rel)) { skip++; return; }
-      if (/\.(py|cmd|bat|md|psyexp|pdf|docx?|pptx?|zip|rar|7z)$/i.test(f.name)) { skip++; return; }
+      if (/\.(py|cmd|bat|md|pdf|docx?|pptx?|zip|rar|7z)$/i.test(f.name)) { skip++; return; }
       keep.push(f);
     });
     return { keep: keep, skip: skip };
   }
   function setPicked(files) {
     picked = Array.prototype.slice.call(files);
-    var c = classify(picked);
-    var psy = c.keep.filter(function (f) { return /\.js$/i.test(f.name); });
-    $('picked').textContent = picked.length
-      ? ('共 ' + picked.length + ' 个文件 → 将读取 ' + c.keep.length + ' 个，跳过 ' + c.skip + ' 个无关文件')
+    index = [];
+    picked.forEach(function (f) { idxPush(f.relPath || f.name, f, null); });
+    buildLookup();
+    renderPicked();
+  }
+  function renderPicked() {
+    var mainJs = index.filter(function (it) { return /\.js$/i.test(it.name); });
+    $('picked').textContent = index.length
+      ? ('共 ' + index.length + ' 个文件 → 已建索引（未读取内容）；解析引用后只读真正需要的')
       : '尚未选择文件';
-    $('go').disabled = psy.length === 0;
-    if (!picked.length) return;
-    var guess = c.keep.filter(function (f) { return !/-legacy-browsers\.js$/i.test(f.name) && !/^lib\//i.test(f.relPath || ''); })
-      .map(function (f) { return (f.relPath || f.name); })[0] || '';
-    if (!$('title').value && guess) $('title').value = guess.replace(/\.js$/i, '').split('/').pop();
-    if (!psy.length) log('⚠️ 没找到实验脚本（*.js）—— 请确认拖入的是 Export HTML 生成的文件夹', 'warn');
+    $('go').disabled = mainJs.length === 0;
+    if (!index.length) return;
+    if (!$('title').value) {
+      var guess = index.filter(function (it) {
+        return /-legacy-browsers\.js$/i.test(it.name);
+      })[0] || index.filter(function (it) { return /\.js$/i.test(it.name) && !/(^|\/)lib\//i.test(it.rel); })[0];
+      if (guess) $('title').value = guess.name.replace(/-legacy-browsers\.js$|\.js$/i, '');
+    }
+    if (!mainJs.length) log('⚠️ 没找到实验脚本（*.js）—— 请确认拖入的是 Export HTML 生成的文件夹', 'warn');
   }
 
   // 拖拽：支持文件夹（webkitGetAsEntry 递归）
+  // ⚠️ 这里只建**索引**（rel/name/entry），**不**调 entry.file()。
+  //    7 万个文件逐个取 File 对象会先把内存与事件队列压垮；拖拽路径必须惰性。
   var drop = $('drop');
   ['dragenter', 'dragover'].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add('hot'); }); });
   ['dragleave', 'drop'].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.remove('hot'); }); });
   drop.addEventListener('drop', function (e) {
-    var items = e.dataTransfer.items, out = [], pending = 0;
+    var items = e.dataTransfer.items;
+    var nItems = items ? items.length : 0;
+    var nFiles = (e.dataTransfer.files && e.dataTransfer.files.length) || 0;
+    // 这行不只是诊断：用户拖进来的东西被识别成什么，本来就该说出来（否则"拖了没反应"无法自查）
+    log('拖入：dataTransfer.items ' + nItems + ' 个、files ' + nFiles + ' 个');
+    index = []; picked = [];
     if (items && items.length && items[0].webkitGetAsEntry) {
+      var jobs = [], nulls = 0;
       for (var i = 0; i < items.length; i++) {
         var entry = items[i].webkitGetAsEntry();
-        if (!entry) continue;
-        pending++;
-        (function (ent) { walk(ent, '', function (list) { out = out.concat(list); if (--pending === 0) setPicked(out); }); })(entry);
+        if (!entry) { nulls++; continue; }
+        jobs.push(walkIndex(entry, ''));
       }
-    } else { setPicked(e.dataTransfer.files); }
-  });
-  function walk(entry, prefix, done) {
-    if (entry.isFile) {
-      entry.file(function (f) { try { Object.defineProperty(f, 'relPath', { value: prefix + f.name }); } catch (e) {} done([f]); });
-      return;
-    }
-    if (!entry.isDirectory) return done([]);
-    var reader = entry.createReader(), entries = [];
-    var readBatch = function () {
-      reader.readEntries(function (batch) {
-        if (!batch.length) {
-          var out = [], total = entries.length;
-          if (!total) return done([]);
-          entries.forEach(function (en) {
-            walk(en, prefix + entry.name + '/', function (l) { out = out.concat(l); if (--total === 0) done(out); });
-          });
-          return;
-        }
-        entries = entries.concat(batch); readBatch();
+      if (nulls) log('⚠️ 有 ' + nulls + ' 个拖入项拿不到文件系统入口（webkitGetAsEntry 返回 null）', 'warn');
+      if (!jobs.length) {
+        log('⚠️ 拖入项都不是可枚举的文件/文件夹 —— 可能拖的是"文件夹快捷方式"或浏览器未授权', 'warn');
+        renderPicked();
+        return;
+      }
+      Promise.all(jobs).then(function () {
+        buildLookup(); renderPicked();
+        log('已索引 ' + index.length + ' 个文件（未读内容）');
+      }).catch(function (err) {
+        folderDropBlocked('枚举拖入的文件夹失败：' + (err && err.message || err));
       });
-    };
-    readBatch();
+    } else {
+      log('（浏览器未提供 webkitGetAsEntry，退回只认文件列表）', 'warn');
+      setPicked(e.dataTransfer.files);
+    }
+  });
+  function walkIndex(entry, prefix) {
+    return new Promise(function (resolve, reject) {
+      if (entry.isFile) { idxPush(prefix + entry.name, null, entry); return resolve(); }
+      if (!entry.isDirectory) return resolve();
+      var reader = entry.createReader(), all = [];
+      var readMore = function () {
+        reader.readEntries(function (batch) {
+          if (!batch.length) {
+            var files = [], dirs = [];
+            all.forEach(function (en) { (en.isFile ? files : dirs).push(en); });
+            var total = files.length + dirs.length;
+            if (!total) return resolve();
+            var done = function () { if (--total === 0) resolve(); };
+            files.forEach(function (en) { walkIndex(en, prefix + entry.name + '/').then(done); });
+            dirs.forEach(function (en) { walkIndex(en, prefix + entry.name + '/').then(done); });
+            return;
+          }
+          all = all.concat(batch); readMore();
+        },
+        // ⚠️ 必须给 readEntries 传**错误回调**。实测：file:// 打开的单文件工具里，
+        //    Chrome 直接以 FS 安全错误拒绝读目录；没有这个回调，Promise 永不结算，
+        //    页面上表现就是"拖进去完全没反应"（一行日志都不打），根本无法自查。
+        function (err) { reject(err || new Error('readEntries 被拒绝')); });
+      };
+      readMore();
+    });
+  }
+
+  /** 本地文件（file://）页面读不了拖入的文件夹 —— 给出可操作的替代路径，并自动打开选择器 */
+  function folderDropBlocked(why) {
+    log('⚠️ ' + why, 'warn');
+    log('   浏览器不允许 file:// 页面读取拖入的文件夹（Chrome 安全策略，与工具无关）。', 'warn');
+    log('   请改点「选择文件夹」按钮：效果完全一样（已在同一台机器实测通过）。', 'warn');
+    try { $('dir').click(); } catch (e) { /* 用户手势上下文里通常可用；不行就手动点 */ }
+  }
+
+  // 提前把话说清楚：file:// 下拖文件夹必被浏览器拒（实测 2×2 对照：
+  //   同一个产物，http://127.0.0.1 拖拽通过、file:// 拖拽被 FS 安全策略拒；
+  //   而「选择文件夹」两条路都通过）。不提前说的话，用户只会看到"拖了没反应"。
+  if (location.protocol === 'file:') {
+    var dz = $('drop');
+    if (dz) {
+      dz.innerHTML += '<div style="font-size:12px;color:#b45309;margin-top:8px;line-height:1.5">'
+        + '⚠️ 以本地文件方式（file://）打开时，浏览器不允许读取<b>拖入</b>的文件夹。<br>'
+        + '请点下面的「<b>选择文件夹</b>」按钮 —— 效果完全一样。</div>';
+    }
+    log('提示：本地文件方式下请用「选择文件夹」按钮；拖拽文件夹会被浏览器的安全策略拦住。', 'warn');
   }
   $('pickDir').onclick = function () { $('dir').click(); };
   $('dir').onchange = function (e) {
@@ -971,22 +1196,71 @@
     setPicked(list);
   };
 
+  /** 兜底路径用：把所有索引项实体化（只在降级时走，代价大但不会静默丢文件） */
+  async function materializeAll() {
+    var out = [];
+    for (var i = 0; i < index.length; i++) {
+      var f = await readItem(index[i]);
+      try { Object.defineProperty(f, 'relPath', { value: index[i].rel }); } catch (e) {}
+      out.push(f);
+    }
+    return out;
+  }
+
   $('go').onclick = async function () {
     var btn = this; btn.disabled = true;
     var sres0 = $('successResult'); if (sres0) sres0.hidden = true;
-    var sres0 = $('successResult'); if (sres0) sres0.hidden = true;
     try {
-      var c = classify(picked);
-      if (!c.keep.length) throw new Error('没有可处理的文件');
-      log('读取 ' + c.keep.length + ' 个文件…');
-      var files = [];
-      for (var i = 0; i < c.keep.length; i++) {
-        var f = c.keep[i];
-        files.push({ name: f.name, relPath: f.relPath || f.name, data: new Uint8Array(await f.arrayBuffer()) });
-      }
+      if (!RC) throw new Error('页面缺少引用闭包解析器（ref-closure.js 未加载）');
+      if (!index.length) throw new Error('没有可处理的文件');
       var assets = await loadAssets();
-      log('开始打包…');
-      var res = await PsywebPack.pack({ files: files, assets: assets, title: $('title').value || '在线实验' });
+
+      log('① 解析引用闭包（只看主脚本与 psyexp，不按扩展名猜、不看目录布局）…');
+      var plan = await planPrecise(assets);
+      var files = [];
+      var source = plan.source;
+      var packOpts = { files: files, assets: assets, title: $('title').value || '在线实验' };
+
+      if (source === 'closure') {
+        log('② 引用闭包给出 ' + plan.items.length + ' 个文件需要读取', 'ok');
+        var declared = [];
+        for (var i = 0; i < plan.items.length; i++) {
+          var it = plan.items[i];
+          // 给 pack-core 两条信息：
+          //   relPath —— 用来在它的 byName 表里找到文件（拖入根相对路径，精确唯一）
+          //   refPath —— 运行时真正会请求的资源名（如 '../材料/x.png'），登记进 resources
+          files.push({
+            name: it.name, relPath: it.rel, data: await readItemU8(it),
+            declaredName: it.refPath, declaredPath: it.refPath
+          });
+          if (it.refPath && it.refPath !== it.name) declared.push({ name: it.refPath, path: it.refPath });
+        }
+        // 入口文件本身必须带上（主脚本可能没被自己的清单引用；psyexp 供 pack-core 复核）
+        var entry = [plan.main];
+        var psyIt = index.filter(function (x) { return /\.psyexp$/i.test(x.name); })[0];
+        if (psyIt) entry.push(psyIt);
+        for (var e = 0; e < entry.length; e++) {
+          var en = entry[e];
+          if (!en) continue;
+          if (files.some(function (x) { return x.relPath === en.rel; })) continue;
+          files.push({ name: en.name, relPath: en.rel, data: await readItemU8(en) });
+        }
+        packOpts.declared = declared;
+      } else if (source === 'fallback') {
+        log('② ⚠️ 未能解析出引用闭包，改用保守筛选（按扩展名保留）—— 会多读，但不会丢文件', 'warn');
+        (plan.notes || []).forEach(function (n) { log('   ' + n, 'warn'); });
+        var c = classify(await materializeAll());
+        for (var k = 0; k < c.keep.length; k++) {
+          var f = c.keep[k];
+          files.push({ name: f.name, relPath: f.relPath || f.name, data: new Uint8Array(await f.arrayBuffer()) });
+        }
+      } else {
+        throw new Error('没找到实验脚本（*.js）。请确认拖入的是 PsychoPy Builder「Export HTML」生成的整个文件夹。');
+      }
+
+      var rawBytes = files.reduce(function (a, x) { return a + x.data.length; }, 0);
+      log('③ 读取完成：' + files.length + ' 个文件（' + (rawBytes / 1048576).toFixed(2) + ' MB），开始打包…');
+      var res = await PsywebPack.pack(packOpts);
       res.log.forEach(function (l) { log(l.line, l.cls); });
       res.resources.forEach(function (s) { log('  ' + s); });
 
@@ -1012,16 +1286,24 @@
           detail: { html: res.html, name: name, bytes: blob.size, resources: Object.keys(res.resources || {}).length }
         }));
       } catch (e) { /* 预览是可选的，出错不打扰主流程 */ }
-      // 供自动化测试读取
+      // 供自动化测试读取（source / fedCount / fedBytes 是"精确选择"的验收依据）
       window.__SITE_TEST__ = {
         ok: true, sizeBytes: blob.size, name: name,
         patches: res.applied.length, resources: Object.keys(res.resources || {}).length,
         changes: res.changes.length, todos: res.todos.length,
+        source: source, fedCount: files.length, fedBytes: rawBytes,
+        indexed: index.length,
         version: (document.querySelector('h1') ? 'v1' : '')
       };
     } catch (e) {
       log('❌ 出错：' + (e && (e.message || e.name) || e), 'bad');
-      window.__SITE_TEST__ = { ok: false, error: String(e && e.message || e) };
+      // 失败路径也要报"到底挑了多少个"：被语法门禁拒绝时，
+      // "精准挑出 132 个而不是 73,412 个"这条结论仍然成立，验收脚本据此判定。
+      // （早先只报 {ok,error}，于是 --max-fed 这种数值判据在失败路径上无从判定。）
+      window.__SITE_TEST__ = {
+        ok: false, error: String(e && e.message || e),
+        source: source, fedCount: files.length, fedBytes: rawBytes, indexed: index.length
+      };
     } finally { btn.disabled = false; }
   };
 

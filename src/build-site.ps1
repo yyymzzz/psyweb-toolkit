@@ -34,7 +34,12 @@ $map = @(
     @{ from = (Join-Path $VENDOR 'preloadjs-1.0.1.min.js');    to = 'preloadjs-1.0.1.min.js' },
     @{ from = (Join-Path $VENDOR 'pako.min.js');               to = 'pako.min.js' },
     @{ from = (Join-Path $ROOT 'node_modules\qrcode-generator\dist\qrcode.js'); to = 'qrcode.js' },
-    @{ from = (Join-Path $ROOT 'src\psyweb-shim-2026.js');     to = 'psyweb-shim-2026.js' }
+    @{ from = (Join-Path $ROOT 'src\psyweb-shim-2026.js');     to = 'psyweb-shim-2026.js' },
+    # 引用闭包解析器与浏览器版 xlsx 读取器：**单一源文件在 src/**，这里只是拷一份给站点用。
+    # 两份实现会漂移（本项目吃过亏），所以 verify-single-tool.js 会把内联进产物的这段
+    # 与 src/ 下的源文件做逐字符比对 —— 谁改歪了立刻红。
+    @{ from = (Join-Path $ROOT 'src\ref-closure.js');          to = 'ref-closure.js' },
+    @{ from = (Join-Path $ROOT 'src\xlsx-rows-pako.js');       to = 'xlsx-rows-pako.js' }
 )
 
 Write-Host '== 拷贝站点素材 =='
@@ -53,7 +58,9 @@ Write-Host ("   合计 {0:N2} MB" -f ($total / 1MB))
 # 站点自检：index.html 里引用的每个素材都必须存在
 Write-Host "`n== 自检：index.html 引用的素材是否齐全 =="
 $html = Get-Content -LiteralPath (Join-Path $SITE 'index.html') -Raw -Encoding UTF8
-$refs = [regex]::Matches($html, "'\./assets/([^']+)'") | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+# 单引号与双引号两种写法都要认（脚本标签用双引号、ASSETS 表用单引号；早先只认单引号，
+# 于是 <script src="./assets/xxx"> 这类引用根本不在自检范围内）
+$refs = [regex]::Matches($html, "['`"]\./assets/([^'`"]+)['`"]") | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
 $missing = @()
 foreach ($r in $refs) {
     if (Test-Path -LiteralPath (Join-Path $ASSETS $r)) { Write-Host ("   [OK]   {0}" -f $r) -ForegroundColor Green }

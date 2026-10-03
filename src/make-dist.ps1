@@ -23,9 +23,31 @@ $ROOT = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $PKG  = Join-Path $ROOT 'dist\psyweb-工具包'
 
 if (-not (Test-Path -LiteralPath $NodeExe)) { throw "找不到 node.exe：$NodeExe（可用 -NodeExe 指定）" }
-foreach ($need in @('src\tool-server.js','src\build-portable.js','src\pack-portable.js','vendor\psychojs-2026.2.3.iife.js','site\collector.html')) {
+foreach ($need in @('src\tool-server.js','src\build-portable.js','src\pack-portable.js','vendor\psychojs-2026.2.3.iife.js')) {
     if (-not (Test-Path -LiteralPath (Join-Path $ROOT $need))) { throw "缺少必要文件：$need" }
 }
+
+# collector.html 的真实产物位置由 src/build-collector.js 决定（当前是 tools/）。
+# 踩过的坑：scripts/fix-audit-findings.ps1 里"统一到 site/collector.html"的补丁
+# 模式写的是 `tools/collector.html`（带斜杠），而代码里其实是
+# `path.join(ROOT, 'tools', 'collector.html')`（带逗号引号）—— **模式没命中，
+# 补丁静默返回**，于是 site/collector.html 从未生成，而本脚本一直要它 →
+# 打包脚本从 2026-09-24 起就一上来就抛异常，且没人发现。
+# 现在改成：候选位置任一命中即可；都没有就现场生成；再没有才报错并列出试过哪些。
+$collectorSrc = $null
+foreach ($c in @('tools\collector.html', 'site\collector.html')) {
+    if (Test-Path -LiteralPath (Join-Path $ROOT $c)) { $collectorSrc = $c; break }
+}
+if (-not $collectorSrc) {
+    Write-Host '   未找到 collector.html，现场生成…'
+    & node (Join-Path $ROOT 'src\build-collector.js')
+    if ($LASTEXITCODE -ne 0) { throw "生成 collector.html 失败（exit $LASTEXITCODE）" }
+    foreach ($c in @('tools\collector.html', 'site\collector.html')) {
+        if (Test-Path -LiteralPath (Join-Path $ROOT $c)) { $collectorSrc = $c; break }
+    }
+}
+if (-not $collectorSrc) { throw "找不到 collector.html（试过 tools\collector.html 与 site\collector.html）" }
+Write-Host "   collector 来源: $collectorSrc"
 
 if (Test-Path -LiteralPath $PKG) { Remove-Item -LiteralPath $PKG -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $PKG, "$PKG\node", "$PKG\src", "$PKG\tools" | Out-Null
@@ -37,12 +59,27 @@ Write-Host ("   node.exe  {0:N1} MB" -f ((Get-Item "$PKG\node\node.exe").Length 
 Write-Host '== 2/5 转换端代码 =='
 # 只带转换真正需要的文件（collector-core/page、build-collector 是"生成回收器"用的，包内已有成品）
 $srcFiles = @('tool-server.js','build-portable.js','pack-portable.js','psyexp-audit.js','support-matrix.js','js-codeblock-fix.js','psyweb-shim-2026.js')
+
+# ⚠️ 手工维护的文件列表**必然有一天落后于代码** —— 2026-09-30 实测踩到：
+#    tool-server.js 改成"发页面时内联 src/ref-closure.js + src/tool-page.js"后，
+#    这个列表没跟着改。后果有两层：
+#      ① 用旧列表打出来的包仍带旧 tool-server.js（含内嵌黑名单）→ 用户拿到的还是旧行为；
+#      ② 若手工只更新 tool-server.js，新包一启动就 readInline 抛异常 → 页面 HTTP 500，工具全废。
+#    所以这里**从代码里反查**：凡是 tool-server.js 里 readInline('x') 的目标，一律自动带上。
+$serverSrc = Get-Content -LiteralPath (Join-Path $ROOT 'src\tool-server.js') -Raw -Encoding UTF8
+$inlineNeeds = [regex]::Matches($serverSrc, "readInline\('([^']+)'\)") |
+    ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+foreach ($f in $inlineNeeds) {
+    if ($srcFiles -notcontains $f) { $srcFiles += $f; Write-Host "   自动补入（被 readInline 引用）: $f" }
+}
+foreach ($f in $srcFiles) {
+    if (-not (Test-Path -LiteralPath (Join-Path $ROOT "src\$f"))) { throw "缺少必要文件：src\$f" }
+}
 foreach ($f in $srcFiles) { Copy-Item -LiteralPath (Join-Path $ROOT "src\$f") -Destination "$PKG\src\" -Force }
 Write-Host ("   {0} 个 js  {1:N2} MB" -f $srcFiles.Count, ((Get-ChildItem "$PKG\src" -File | Measure-Object -Property Length -Sum).Sum / 1MB))
 
 Write-Host '== 3/5 第三方运行时（按 vendor.lock 已锁定版本）=='
 # pack-portable.js 会从 <root>\vendor 读取，故保持同样的相对结构
-New-Item -ItemType Directory -Force -Path "$PKG\spike\m0" | Out-Null
 Copy-Item -LiteralPath (Join-Path $ROOT 'vendor') -Destination "$PKG\vendor" -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $ROOT 'vendor.lock.json') -Destination "$PKG\vendor.lock.json" -Force
 Write-Host ("   vendor  {0:N1} MB" -f ((Get-ChildItem "$PKG\vendor" -File | Measure-Object -Property Length -Sum).Sum / 1MB))
@@ -58,7 +95,7 @@ Write-Host ("   node_modules  {0:N2} MB" -f ((Get-ChildItem "$PKG\node_modules" 
 
 Write-Host '== 5/6 入口、回收器与说明 =='
 Copy-Item -LiteralPath (Join-Path $ROOT '启动psyweb工具.cmd') -Destination $PKG -Force
-Copy-Item -LiteralPath (Join-Path $ROOT 'site\collector.html') -Destination "$PKG\tools\" -Force
+Copy-Item -LiteralPath (Join-Path $ROOT $collectorSrc) -Destination "$PKG\tools\collector.html" -Force
 if (Test-Path (Join-Path $ROOT 'docs\使用说明.md')) { Copy-Item (Join-Path $ROOT 'docs\使用说明.md') -Destination $PKG -Force }
 if (Test-Path (Join-Path $ROOT 'docs\分发包.md')) { Copy-Item (Join-Path $ROOT 'docs\分发包.md') -Destination $PKG -Force }
 
@@ -100,7 +137,7 @@ $licLines += $rows
 $licLines += ''
 $licLines += '## 说明'
 $licLines += '- 若要**公开分发**本工具，请先补齐上表各组件的许可证原文。'
-本工具自身代码：MIT（见仓库 LICENSE）。
+$licLines += '- 本工具自身代码：MIT（见仓库 LICENSE）。'
 $licLines += ('- 生成时间：' + (Get-Date -Format 'yyyy-MM-dd HH:mm'))
 $licLines | Out-File -FilePath "$PKG\第三方许可.md" -Encoding UTF8
 Write-Host ("   第三方许可.md  {0} 个组件" -f $lock.count)
@@ -125,7 +162,7 @@ psyweb 转换工具 · 免安装包
 【做好之后怎么用】
 ① 把生成的 html 发给被试（电脑上双击打开；手机和平板做不了）
 ② 被试做完 → 结果页给出 摘要截图 / 下载 CSV / 数据二维码
-③ 他们把截图或 CSV 发回来 → 双击 site\collector.html，把截图拖进去，
+③ 他们把截图或 CSV 发回来 → 双击 tools\collector.html，把截图拖进去，
    自动还原成表格，可累积多人后一键导出合并 CSV
 
 【数据安全】

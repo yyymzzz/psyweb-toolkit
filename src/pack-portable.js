@@ -17,7 +17,12 @@ const path = require('path');
 const { fixJsCode } = require('./js-codeblock-fix.js');
 
 const ROOT = path.resolve(__dirname, '..');
-const VENDOR = path.join(ROOT, 'spike', 'm0', 'vendor');
+// 第三方库位置：仓库根 vendor/（由 scripts/fetch-vendor.ps1 按 vendor.lock.json 拉取并校验）。
+// 历史坑：这里曾写 spike/m0/vendor —— 目录在"vendor 收敛"时搬到了仓库根，代码没跟着改，
+// 于是本地工具一切到"内联素材"就报"缺少第三方库 jquery-3.6.0.min.js"。
+// 这条路径有守卫：node src/verify-vendor-refs.js 会扫全仓库，任何指向不存在目录的
+// vendor 引用都会让它 exit 1。
+const VENDOR = path.join(ROOT, 'vendor');
 
 // 1×1 透明 PNG：用于把"指向远端 URL 的资源"替换掉，保证便携包零网络请求
 const PLACEHOLDER_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
@@ -76,61 +81,79 @@ if (!resEntries.length) console.log('   （该实验没有外部资源：跳过�
 
 // 2a. 资源清单补全（实测必需的补丁）
 //     官方 CLI 编译器（psyexpCompile）只写 Settings 里**显式声明**的资源；
-//     而 Builder 的 Export HTML 会额外做一次"自动探测"（扫组件参数与条件文件）。
-//     于是同一条流水线在 CLI 下会缺 ima1.png / 条件文件 → 试次直接跑不起来。
-//     这里用 psyexp-audit 的解析结果把漏掉的资源补进 resources 数组。
+//     Builder 的 Export HTML 会额外做一次"自动探测"。CLI 编译时工作目录是空的
+//     临时目录，探测更是什么都找不到 —— 实测某个真实导出物编译出来的 resources
+//     只剩一条远端 URL 占位图。所以缺的资源全靠这里补。
+//
+//     ⚠️ 历史缺陷（本次修）：旧实现把发现的媒体名当成"与 psyexp 同目录"来找：
+//         const dir = path.dirname(path.resolve(PSYEXP));
+//         found.add(v) 仅当 fs.existsSync(path.join(dir, v))
+//     只要实验把 psyexp 与刺激图分放两个目录（例如 程序/ 与 ../材料/），命中率就是 0 ——
+//     即使把几百 MB 全上传，包里也不会有任何刺激图，而且是静默的。
+//     现在改用 src/ref-closure.js：从 psyexp 解析代码里的路径表达式
+//     （STIM_DIR = os.path.join(_thisDir, os.pardir, '材料') 折叠成 ../材料），
+//     引用路径**相对 psyexp 目录**解析，跨目录天然成立。
 const PSYEXP = arg('psyexp');
 let injected = [];
+let refReport = [];
 if (PSYEXP && fs.existsSync(PSYEXP)) {
-  const { parsePsyexp } = require('./psyexp-audit.js');
-  const dir = path.dirname(path.resolve(PSYEXP));
-  const model = parsePsyexp(PSYEXP);
-  const found = new Set();
-  const RES_KEYS = { ImageComponent: ['image'], MovieComponent: ['movie'], SoundComponent: ['sound'] };
-  for (const r of model.routines) {
-    for (const c of r.components) {
-      for (const k of (RES_KEYS[c.type] || [])) {
-        const p = c.params[k];
-        const v = p && String(p.decoded).trim().replace(/^['"]|['"]$/g, '');
-        // 跳过动态引用（$变量 / 代码表达式），只收真实文件
-        if (v && !/[$\[\]{}]|\.format\s*\(|thisTrial|\+/.test(v) && fs.existsSync(path.join(dir, v))) found.add(v);
-      }
-    }
-  }
-  for (const loop of model.loops) {
-    const cf = loop.conditionsFile;
-    if (cf && !/^\$|\.format\s*\(|\{/.test(cf) && fs.existsSync(path.join(dir, cf))) found.add(cf);
-  }
+  const RC = require('./ref-closure.js');
+  const psyexpText = fs.readFileSync(PSYEXP, 'utf8');
 
-  // 2a-2 条件文件**内容**里的媒体文件名
-  //   组件的 image 参数常常是动态表达式（$left_img），文件名其实躺在条件文件单元格里。
-  //   官方 Export HTML 的"自动探测"就是靠这一步把 ima1.png/ima2.png 找出来的；
-  //   只扫 psyexp 文本会漏掉它们，试次会因为 unknown resource 直接中断（实测）。
-  for (const cf of [...found]) {
-    const ext = path.extname(cf).toLowerCase();
-    if (['.xlsx', '.xls', '.csv', '.tsv', '.odp'].indexOf(ext) === -1) continue;
-    try {
-      let values = [];
-      const full = path.join(dir, cf);
-      if (ext === '.csv' || ext === '.tsv') {
-        values = fs.readFileSync(full, 'utf8').split(/[\r\n,;\t]+/);
-      } else {
-        const XLSX = require(path.join(ROOT, 'spike', 'm0', 'vendor', 'xlsx.full.min.js'));
-        const wb = XLSX.readFile(full);
-        wb.SheetNames.forEach((sn) => {
-          XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1 }).forEach((row) => {
-            (row || []).forEach((v) => { if (v !== null && v !== undefined) values.push(String(v)); });
-          });
-        });
-      }
-      values.forEach((v) => {
-        const t = String(v).trim();
-        if (/\.(png|jpe?g|gif|bmp|mp3|wav|mp4|mov|avi)$/i.test(t) && fs.existsSync(path.join(dir, t))) found.add(t);
-      });
-    } catch (e) {
-      console.log('   （条件文件内容扫描跳过 ' + cf + '：' + e.message + '）');
+  // 条件表读取（相对 psyexp 目录）：csv/tsv 直接读文本；xlsx/xls 用 SheetJS
+  const getTableRows = (rel) => {
+    const full = path.join(DIR, rel);
+    if (!fs.existsSync(full)) return null;
+    const ext = path.extname(full).toLowerCase();
+    if (ext === '.csv' || ext === '.tsv') {
+      return fs.readFileSync(full, 'utf8').split(/\r?\n/).filter((l) => l.trim() !== '')
+        .map((l) => l.split(ext === '.tsv' ? '\t' : ','));
     }
+    if (ext === '.xlsx' || ext === '.xls') {
+      const XLSX = require(path.join(VENDOR, 'xlsx.full.min.js'));
+      const wb = XLSX.readFile(full);
+      const rows = [];
+      wb.SheetNames.forEach((sn) => {
+        XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: false }).forEach((row) => {
+          if (row && row.length) rows.push(row.map((v) => (v == null ? '' : String(v))));
+        });
+      });
+      return rows;
+    }
+    return null;
+  };
+
+  // exists 只认**精确路径**（相对 psyexp 目录）。
+  // 不用"同目录兜底"：那会把 os.path.join(PRAC_DIR, image) 与
+  // os.path.join(STIM_DIR, image) 两组候选混在一起，凭空多出一倍假引用。
+  const res = RC.resolve({
+    psyexpRel: path.basename(PSYEXP),
+    psyexpText: psyexpText,
+    getTableRows: getTableRows,
+    exists: (rel) => fs.existsSync(path.join(DIR, rel))
+  });
+
+  res.notes.forEach((n) => console.log('   （引用解析）' + n));
+
+  const found = new Set();
+  const notFound = [];
+  res.refs.forEach((r) => {
+    const full = path.join(DIR, r.path);
+    if (fs.existsSync(full)) found.add(r.path);
+    else notFound.push(r.path);
+  });
+  // "内容里读到、但磁盘上找不到" 必须**说出来** —— 静默丢弃正是旧实现的病根
+  if (notFound.length) {
+    console.log('   ⚠️ 有 ' + notFound.length + ' 个引用在磁盘上找不到（不会进包）：'
+      + notFound.slice(0, 6).join('、') + (notFound.length > 6 ? ' …' : ''));
+    problems.push('unresolved-refs:' + notFound.length);
   }
+  if (res.unresolved && res.unresolved.length) {
+    console.log('   ⚠️ 有 ' + res.unresolved.length + ' 处动态引用无法静态解析（可能在运行时才确定文件名）：');
+    res.unresolved.slice(0, 4).forEach((u) => console.log('      - ' + u));
+  }
+  refReport = res.refs.map((r) => r.path + '  [' + r.role + ' ← ' + r.source + ']');
+
   injected = [...found].filter((n) => !resEntries.some((e) => e.p === n || e.name === n));
   if (injected.length) {
     patch('inject-resources', /resources:\s*\[/,
@@ -213,6 +236,40 @@ const MUST = [
 if (AUTOTEST) MUST.push(['自动驱动注入', /psywebAutoDrive\(psychoJS\);/]);
 const missing = MUST.filter(([, re]) => !re.test(js));
 must(!missing.length, '补丁后自检失败，缺失: ' + missing.map((m) => m[0]).join('、'));
+
+// ---------------------------------------------------------------- 4b. 语法门禁
+// 为什么必须有（实测踩到，而且很典型）：
+//   打包全程只做**文本补丁**，从来不编译"生成出来的实验 JS"。于是"连语法都过不了"
+//     的包照样能出：只要 psyexp 的**组件参数**里写了 Python 专有表达式，生成物里就会有非法 JS
+//   例如 <Param val="$'A' if cond else 'B'" valType="str" name="text"/>
+//   官方编译器不会把它翻成 JS，生成物里就躺着 `'A' if cond else 'B'` → 浏览器 SyntaxError、白屏，
+//   而工具这边一路"✅ 完成"。
+//   宁可拒绝出包，也不产出坏包（本项目红线：不把有问题的产物说成好了）。
+{
+  const vm = require('vm');
+  let syntaxErr = null;
+  try { new vm.Script(js, { filename: 'experiment-legacy-browsers.js' }); }
+  catch (e) { syntaxErr = e; }
+  if (syntaxErr) {
+    const lines = js.split('\n');
+    const stackMatch = /:(\d+)\b/.exec(String(syntaxErr.stack || ''));
+    const ln = syntaxErr.lineNumber || (stackMatch ? Number(stackMatch[1]) : 0);
+    console.error('\n[打包失败] 生成的实验 JS 有语法错误，拒绝出包：' + syntaxErr.message);
+    if (ln) {
+      for (let i = Math.max(0, ln - 4); i < Math.min(lines.length, ln + 3); i++) {
+        console.error('  ' + (i + 1 === ln ? '>> ' : '   ') + String(i + 1).padStart(5) + ': ' + lines[i].slice(0, 220));
+      }
+    }
+    console.error('\n  常见原因：Builder 的**组件参数**里写了 Python 专有表达式。');
+    console.error('  官方编译器只翻译 CodeComponent 的 Py 槽位，组件参数里的表达式是**原样照抄**的。');
+    console.error('  典型写法与改法：');
+    console.error("    ×  $'A' if cond else 'B'          →  √  $cond ? 'A' : 'B'   （JS 三元）");
+    console.error('    ×  $os.path.join(DIR, name)      →  √  $DIR + name        （或预先把 DIR 定成 JS 字符串）');
+    console.error('  改完在 PsychoPy Builder 里重新 Export HTML，或直接改 .psyexp 后重跑本工具。');
+    process.exit(1);
+  }
+  console.log('   JS 语法门禁：通过（' + js.length + ' 字符，vm.Script 强编译）');
+}
 
 // ---------------------------------------------------------------- 5. 组装单文件
 function readVendor(f) {

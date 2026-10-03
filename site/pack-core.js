@@ -194,6 +194,36 @@
       say('用 .psyexp 校验资源清单：' + names.length + ' 个引用，补齐 ' + added + ' 个漏登记的');
     }
 
+    // 2c. 调用方（引用闭包精确选择器）算出的资源清单 —— **优先于按扩展名的兜底**
+    // 为什么必须有这一步：2b 的兜底是按**文件名**登记的（{'name': 'stim.png'}），
+    // 而实验运行时要的名字是它自己在 JS 里拼出来的路径。典型例子：
+    //   STIM_DIR = 相对脚本目录的某个子目录（由 CodeComponent 定义）
+    //   studyImg.setImage(os.path.join(STIM_DIR, image))
+    //   => 运行时请求的资源名带目录前缀（如 '../材料/stim.png'）
+    // 只登记 'stim.png' 会对不上 —— 包做出来了，图却取不到。
+    // 所以调用方把闭包里的**引用路径**原样交进来（与 Node 侧 pack-portable 同一口径）。
+    if (opts.declared && opts.declared.length) {
+      var addList = [];
+      opts.declared.forEach(function (d) {
+        if (!d || !d.name) return;
+        if (declaredNames.indexOf(d.name) >= 0) return;
+        declared.push({ name: d.name, p: d.path || d.name });
+        declaredNames.push(d.name);
+        addList.push({ name: d.name, path: d.path || d.name });
+      });
+      if (addList.length) {
+        var patcherD = makePatcher(function () { return js; }, function (v) { js = v; }, []);
+        patcherD('inject-resources', /resources:\s*\[/,
+          function (m) {
+            return m[0] + '\n    ' + addList.map(function (d) {
+              return "{'name': '" + String(d.name).replace(/'/g, "\\'") + "', 'path': '"
+                + String(d.path).replace(/'/g, "\\'") + "'},";
+            }).join('\n    ');
+          });
+        say('按引用闭包登记资源 ' + addList.length + ' 个（用运行时真正会请求的路径名，不是文件名）');
+      }
+    }
+
     // 2b. 兜底：凡是拖进来的、看起来像刺激/条件文件的，都补登记
     var extra = files.filter(function (f) {
       if (!MEDIA.test(f.name)) return false;
@@ -209,6 +239,38 @@
       var patcher0 = makePatcher(function () { return js; }, function (v) { js = v; }, []);
       patcher0('inject-resources', /resources:\s*\[/,
         function (m) { return m[0] + '\n    ' + extra.map(function (f) { return "{'name': '" + f.name + "', 'path': '" + f.name + "'},"; }).join('\n    '); });
+    }
+
+    // 2d. 反斜杠别名：清单里的 name 常写成 Windows 形式（'..\数据\试次表.csv'），
+    //     但**运行时请求的是正斜杠形式** —— 实测编译产物：
+    //       panel trialList: 'practice/practice_trials.csv'
+    //       TrialHandler.importConditions(psychoJS.serverManager, '../数据/试次表.csv', …)
+    //     而资源表是**按名字精确查**的：
+    //       psyweb-shim-2026.js:261  var entry = self._resources.get(r.name);
+    //     而 _resources 正是由我们写进 resources 数组的 name 建出来的 —— 键就是我们写的名字。
+    //     所以名字带反斜杠 = 运行时查不到（包做出来了，试次却加载不了条件表）。
+    //     凡是含反斜杠的登记项，补一条正斜杠别名；代价十几 KB，换"一定能取到"。
+    var aliasList = [];
+    declared.forEach(function (d) {
+      var n = String((d && d.name) || '');
+      if (n.indexOf('\\') < 0) return;
+      var slash = n.replace(/\\/g, '/');
+      if (declaredNames.indexOf(slash) >= 0) return;
+      declaredNames.push(slash);
+      aliasList.push({ name: slash, path: slash });
+    });
+    if (aliasList.length) {
+      var patcherAlias = makePatcher(function () { return js; }, function (v) { js = v; }, []);
+      patcherAlias('inject-resources', /resources:\s*\[/,
+        function (m) {
+          return m[0] + '\n    ' + aliasList.map(function (d) {
+            return "{'name': '" + d.name.replace(/'/g, "\\'") + "', 'path': '" + d.path.replace(/'/g, "\\'") + "'},";
+          }).join('\n    ');
+        });
+      aliasList.forEach(function (d) { declared.push({ name: d.name, p: d.path }); });
+      say('补正斜杠别名 ' + aliasList.length + ' 条（运行时按正斜杠查资源表）：'
+        + aliasList.map(function (d) { return d.name; }).slice(0, 3).join('、')
+        + (aliasList.length > 3 ? ' …' : ''));
     }
 
     // 内联资源：图片 → HTMLImageElement 可用的 data URI；条件文件 → ArrayBuffer
@@ -277,6 +339,37 @@
     ];
     var missing = MUST.filter(function (p) { return !p[1].test(js); }).map(function (p) { return p[0]; });
     if (missing.length) throw new Error('补丁后自检失败，缺少：' + missing.join('、'));
+
+    // ④b 语法门禁：拒绝产出"连语法都过不了"的包
+    // 打包全程只做文本补丁，从不编译生成出来的实验 JS。实测反例：只要 psyexp 的
+    // **组件参数**里写了 Python 专有表达式，生成物里就会有非法 JS
+    //   <Param val="$'A' if cond else 'B'" valType="str" name="text"/>
+    // 官方编译器不翻译它，生成物里就躺着 `'A' if cond else 'B'` → 浏览器 SyntaxError、白屏，
+    // 而工具这边一路"✅ 完成"。宁可拒绝出包，也不产出坏包。
+    // 只在**legacy 版**上做：module 版带 ESM import，new Function 会误报。
+    if (legacy) {
+      var synErr = null;
+      try { new Function(js); } catch (e) { synErr = e; }
+      if (synErr) {
+        var lns = js.split('\n'), ln = 0;
+        var mm2 = /:(\d+)\b/.exec(String(synErr.stack || ''));
+        if (mm2) ln = Number(mm2[1]);
+        var ctx = '';
+        if (ln) {
+          for (var i2 = Math.max(0, ln - 4); i2 < Math.min(lns.length, ln + 3); i2++) {
+            ctx += '\n  ' + (i2 + 1 === ln ? '>> ' : '   ') + (i2 + 1) + ': ' + lns[i2].slice(0, 200);
+          }
+        }
+        throw new Error('生成的实验 JS 有语法错误，拒绝出包：' + synErr.message + ctx
+          + '\n\n常见原因：Builder 的**组件参数**里写了 Python 专有表达式'
+          + '（官方编译器只翻译 CodeComponent 的 Py 槽位，组件参数是原样照抄的）。'
+          + '\n  改法： `$\'A\' if cond else \'B\'` → `$cond ? \'A\' : \'B\'`；'
+          + '`$os.path.join(DIR, name)` → 预先把 DIR 定成 JS 字符串后 `$DIR + name`。');
+      }
+      say('JS 语法门禁：通过（new Function 强编译）');
+    } else {
+      say('⚠️ 只有 module 版脚本，跳过 JS 语法门禁（ESM import 会被 new Function 误判）', 'warn');
+    }
 
     // ⑤ 组装单文件
     var esc = function (s) { return String(s).replace(/<\//g, '<\\/'); };

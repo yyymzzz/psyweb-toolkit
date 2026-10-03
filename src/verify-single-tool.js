@@ -124,11 +124,79 @@ if (assetBlock < 0) {
   }
 }
 
+// ---- ③b 内联的 JS 块 vs 源文件（逐字符） ----
+// 补一个洞：早先只对 PSYWEB_ASSETS 里的素材做了逐字符比对，pack-core.js 只被
+// "强制解析"过。**语法过了不等于内容没被改歪** —— 本项目正是被"能编译但语义已坏"
+// 坑过两次（模板字符串吃掉反斜杠，\s→s 之后仍然合法）。
+// 这里对三个内联 JS 块做与构建脚本**互逆**的变换后逐字符比对；同时校验
+// site/ 下的拷贝与 src/ 下的源文件一致（防止两份实现漂移）。
+// ⚠️ marker 不能只用模块名（PsywebPack 这种）：页面主脚本里也会出现
+//    `PsywebPack.pack(...)`、`window.PsywebRefClosure` 等字样，于是"含标记的块"会有 2 个。
+//    必须用 UMD 包装里**只有模块自己才有**的签名 `root.XxxYyy = factory()`。
+const JSBLOCKS = [
+  { key: 'pack-core.js', srcs: ['site/pack-core.js'], marker: 'root.PsywebPack = factory()' },
+  { key: 'ref-closure.js', srcs: ['site/assets/ref-closure.js', 'src/ref-closure.js'], marker: 'root.PsywebRefClosure = factory()' },
+  { key: 'xlsx-rows-pako.js', srcs: ['site/assets/xlsx-rows-pako.js', 'src/xlsx-rows-pako.js'], marker: 'root.PsywebXlsxRows = factory()' },
+];
+// 与 build-single-tool.ps1 的 Protect-Inline 完全互逆：
+//   </      -> <\/         (JS 里 \/ 就是 /)
+//   <!--    -> \x3C!--     (JS 里 \x3C 就是 <)
+function protectInline(s) {
+  return String(s).split('</').join('<\\/').split('<!--').join('\\x3C!--');
+}
+console.log('\n[③b] 内联 JS 块 vs 源文件（逐字符，构建脚本的逆变换）');
+for (const jb of JSBLOCKS) {
+  // 先用签名定位（唯一），再用源文件做**互逆变换后逐字符相等**判定
+  const found = blocks.filter((b) => b.code.includes(jb.marker));
+  if (found.length !== 1) {
+    errors.push(`内联块 ${jb.key} 定位失败（含签名 ${jb.marker} 的块有 ${found.length} 个）`);
+    console.log(`  ❌ ${jb.key.padEnd(20)} 定位失败（含签名 ${jb.marker} 的块 ${found.length} 个）`);
+    continue;
+  }
+  const have = found[0].code;
+  const texts = [];
+  let srcOk = true;
+  for (const rel of jb.srcs) {
+    const p = path.join(siteDir, '..', rel);
+    if (!fs.existsSync(p)) {
+      // site/ 与 src/ 相对路径不同，分别兜一下
+      const p2 = rel.startsWith('site/') ? path.join(siteDir, rel.slice(5)) : p;
+      if (!fs.existsSync(p2)) { console.log(`  ⚠️ ${jb.key}: 源文件不存在 ${rel}`); srcOk = false; continue; }
+      texts.push({ rel, text: fs.readFileSync(p2, 'utf8') });
+      continue;
+    }
+    texts.push({ rel, text: fs.readFileSync(p, 'utf8') });
+  }
+  // src/ 与 site/ 两份必须一致（漂移检查）
+  if (texts.length === 2 && texts[0].text !== texts[1].text) {
+    errors.push(`${jb.key}: ${texts[0].rel} 与 ${texts[1].rel} 不一致（两份实现已漂移）`);
+    console.log(`  ❌ ${jb.key.padEnd(20)} 两份源文件不一致：${texts[0].rel} vs ${texts[1].rel}`);
+    continue;
+  }
+  if (!texts.length) { errors.push(`${jb.key}: 找不到任何源文件`); continue; }
+  const want = protectInline(texts[0].text);
+  if (have === want) {
+    console.log(`  ✅ ${jb.key.padEnd(20)} ${have.length} 字符，与 ${texts.map((t) => t.rel).join(' / ')} 逐字符等价`);
+  } else {
+    let d = -1;
+    const n = Math.min(have.length, want.length);
+    for (let i = 0; i < n; i++) if (have[i] !== want[i]) { d = i; break; }
+    if (d < 0) d = n;
+    errors.push(`${jb.key} 内联内容与源文件不等价（长度 ${have.length} vs ${want.length}，首个差异 @${d}）`);
+    console.log(`  ❌ ${jb.key.padEnd(20)} ${have.length} vs ${want.length}，首个差异 @${d}`);
+    console.log(`      have: ${JSON.stringify(have.slice(Math.max(0, d - 40), d + 40))}`);
+    console.log(`      want: ${JSON.stringify(want.slice(Math.max(0, d - 40), d + 40))}`);
+  }
+  if (!srcOk) console.log(`  ⚠️ ${jb.key}: 有源文件缺失，等价性只覆盖了找到的那些`);
+}
+
 // ---- ④ 必需标记 ----
 console.log('\n[④] 必需标记');
 const MUST = {
   'window.PSYWEB_ASSETS': '内联素材注入点',
   'PsywebPack': '浏览器版打包器（pack-core）',
+  'PsywebRefClosure': '引用闭包解析器（与本地工具同一份）',
+  'PsywebXlsxRows': '浏览器版 xlsx 读取器（pako）',
   'psyweb': '页面标题/品牌',
 };
 for (const k of Object.keys(MUST)) {
@@ -136,7 +204,9 @@ for (const k of Object.keys(MUST)) {
   console.log(`  ${ok ? '✅' : '❌'} ${k.padEnd(24)} ${MUST[k]}`);
   if (!ok) errors.push(`缺少必需标记 ${k}（${MUST[k]}）`);
 }
-if (html.includes('src="./pack-core.js"')) errors.push('外链 pack-core.js 仍存在（内联未生效）');
+for (const m of ['src="./pack-core.js"', 'src="./assets/ref-closure.js"', 'src="./assets/xlsx-rows-pako.js"']) {
+  if (html.includes(m)) errors.push(`外链 script 仍存在（内联未生效）：${m}`);
+}
 notes.push(`产物体积 ${(fs.statSync(htmlPath).size / 1048576).toFixed(2)} MB`);
 
 // ---- 结论 ----
