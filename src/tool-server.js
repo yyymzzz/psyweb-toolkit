@@ -206,7 +206,10 @@ function doConvert(payload) {
 
   const r = spawnSync(process.execPath,
     [path.join(__dirname, 'build-portable.js'), '--psyexp', psyexpAbs, '--out', outAbs,
-     '--title', payload.title || '在线实验'],
+     '--title', payload.title || '在线实验',
+     // 条件表安全网的扫描根 = 本次上传的根目录（前端把条件表全传上来了，
+     // 打包器要能同样看到它们；只扫这个临时目录，不会碰到用户磁盘上的其它东西）
+     '--sweep-dir', work],
     { encoding: 'utf8', timeout: 600000 });
 
   const text = ((r.stdout || '') + (r.stderr || '')).trim();

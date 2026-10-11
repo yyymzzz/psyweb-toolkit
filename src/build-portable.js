@@ -39,6 +39,8 @@ const OUT = arg('out');
 const TITLE = arg('title', '在线实验');
 const EXPNAME = arg('expname', PSYEXP ? path.basename(PSYEXP, path.extname(PSYEXP)) : 'experiment');
 const AUTOTEST = has('autotest');
+// 条件表安全网的扫描根：本地工具（服务端上传）会传"上传根"，CLI 路径不传（只扫 psyexp 目录）
+const SWEEP_DIR = arg('sweep-dir');
 if (!PSYEXP || !OUT) {
   console.error('用法: node src/build-portable.js --psyexp <文件.psyexp> --out <产物.html> [--title …] [--autotest]');
   process.exit(2);
@@ -112,6 +114,7 @@ const packArgs = [path.join(__dirname, 'pack-portable.js'),
   '--dir', expDir, '--js', legacyJs, '--out', OUT, '--psyexp', path.resolve(PSYEXP),
   '--title', TITLE, '--expname', EXPNAME];
 if (AUTOTEST) packArgs.push('--autotest');
+if (SWEEP_DIR && fs.existsSync(SWEEP_DIR)) packArgs.push('--sweep-dir', SWEEP_DIR);
 const p = spawnSync(process.execPath, packArgs, { stdio: 'inherit' });
 const code = p.status === null ? 1 : p.status;
 

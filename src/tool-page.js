@@ -261,7 +261,33 @@
     if (missing.length) say('   · ⚠️ ' + missing.length + ' 个引用的文件在所选目录里不存在：'
       + missing.slice(0, 5).join('、') + (missing.length > 5 ? ' …' : ''), 'warn');
 
-    return { items: out.filter(function (it) { return !/\.psyexp$/i.test(it.name); }), source: 'closure', notes: notes, degraded: false, res: res };
+    // ⑤ 窄口径安全网：解析不出的**条件表**引用
+    //    psyexp 声明了 conditionsFile，但值是运行期表达式（$condsFile、
+    //    $"group{}.xlsx".format(expInfo['group'])）——静态拿不到具体文件名。
+    //    条件表以 KB 计，多带不会撑爆上传；漏带则实验**发出去之后**跑到一半
+    //    报 unknown resource。所以这里按扩展名把目录里的条件表全部补上，只补表不补媒体。
+    //    （refs 一个都没有时不会走到这里 —— 那种情况 ref-closure 已判 degraded，走保守筛选。）
+    var swept = [];
+    if (res.unresolvedTables && res.unresolvedTables.length) {
+      index.forEach(function (it) {
+        if (!TABLE_EXT.test(it.name)) return;
+        if (SKIP_DIR.test(it.rel)) return;
+        if (seen[it.rel]) return;
+        seen[it.rel] = 1; out.push(it); swept.push(it.rel);
+      });
+      say('   · 安全网：有 ' + res.unresolvedTables.length + ' 处条件表引用静态解析不出（'
+        + res.unresolvedTables.slice(0, 2).join('；') + '），已把所选目录里的条件表一并带上'
+        + (swept.length ? '（+' + swept.length + ' 个：' + swept.slice(0, 3).join('、')
+          + (swept.length > 3 ? ' …' : '') + '）' : '（目录里没有可补的条件表）'), 'warn');
+    }
+
+    return {
+      items: out.filter(function (it) { return !/\.psyexp$/i.test(it.name); }),
+      source: 'closure', notes: notes, degraded: false, res: res,
+      // 供验收探针钉数值用（不要拿日志字符串做判据）
+      unresolvedTables: (res.unresolvedTables || []).length,
+      sweptTables: swept.length
+    };
   }
 
   /* ---------------------------------------------------------------- 转换 */
@@ -320,7 +346,9 @@
         source = 'closure';
         log('② 引用闭包给出 ' + chosen.length + ' 个文件需要上传'
           + (plan.res && plan.res.unresolved && plan.res.unresolved.length
-            ? '（另有 ' + plan.res.unresolved.length + ' 处动态引用无法静态解析）' : ''), 'ok');
+            ? '（另有 ' + plan.res.unresolved.length + ' 处动态引用无法静态解析）' : '')
+          + (plan.res && plan.res.unresolvedTables && plan.res.unresolvedTables.length
+            ? '（其中条件表安全网已并入，见上）' : ''), 'ok');
       } else {
         // —— 降级：退回旧的"按扩展名保留"行为。必须**说出来**，不许静默 ——
         log('② ⚠️ 未能解析出引用闭包，改用保守筛选（按扩展名保留）—— 会多传，但不会丢文件', 'warn');
@@ -382,7 +410,8 @@
         a.href = j.url; a.download = j.outName; a.textContent = '点这里下载 ' + j.outName;
         document.getElementById('log').appendChild(a);
         log('也可以直接从磁盘取：' + j.outPath, 'ok');
-        window.__SITE_TEST__ = { ok: true, source: source, uploaded: payload.files.length, bytes: total, outName: j.outName, size: j.size };
+        window.__SITE_TEST__ = { ok: true, source: source, uploaded: payload.files.length, bytes: total, outName: j.outName, size: j.size,
+          unresolvedTables: plan.unresolvedTables || 0, sweptTables: plan.sweptTables || 0 };
       } else {
         log('❌ 转换失败，请看上面日志', 'bad');
         window.__SITE_TEST__ = { ok: false, source: source, uploaded: payload.files.length };

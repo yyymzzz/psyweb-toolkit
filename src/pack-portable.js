@@ -34,6 +34,9 @@ function arg(name, def) {
 const has = (name) => process.argv.includes('--' + name);
 
 const DIR = arg('dir');
+// 条件表安全网的扫描根（见 2a-2 段）。只有调用方明确给出时才用 ——
+// 默认只扫 DIR，绝不向上漫游：CLI 路径下 DIR 可能是用户的实验目录，往上就是整个盘。
+const SWEEP_DIR = arg('sweep-dir');
 const JS_FILE = arg('js');
 const OUT = arg('out', path.join(ROOT, 'spike', 'm0', 'build', 'portable.html'));
 if (!DIR || !JS_FILE) {
@@ -159,6 +162,52 @@ if (PSYEXP && fs.existsSync(PSYEXP)) {
     patch('inject-resources', /resources:\s*\[/,
       (m) => m[0] + '\n    ' + injected.map((n) => `{'name': '${n}', 'path': '${n}'},`).join('\n    '));
     injected.forEach((n) => resEntries.push({ name: n, p: n }));
+  }
+
+  // 2a-2. 条件表安全网（2026-10-11 补）
+  //   conditionsFile 是运行期表达式时（`$condsFile`、`$"group{}.xlsx".format(expInfo['group'])`），
+  //   ref-closure 拿不到具体文件名。前端已按扩展名把目录里的条件表一并上传（tool-page.js 的
+  //   "安全网"段），**打包器必须同样认账** —— 否则文件传上来了却不登记、不内联，
+  //   产物照样缺表（实测：本地工具路径上一版就是这样，白传）。
+  //   只在真有未解析条件表时才扫；扫描根由调用方给出（服务端传上传根；
+  //   CLI 路径没有 sweep-dir → 只扫 psyexp 目录）。
+  //   资源名同时登记两种：**相对 psyexp 目录的路径**（exp2 那类 `../材料/x.png` 口径）
+  //   与**文件名**（条件表里的 `condsFile` 列值多为裸文件名）。
+  if (res.unresolvedTables && res.unresolvedTables.length) {
+    const sweepRoot = (SWEEP_DIR && fs.existsSync(SWEEP_DIR)) ? SWEEP_DIR : DIR;
+    const TABLE_RE = /\.(xlsx?|csv|tsv|odp)$/i;
+    const SKIP_WALK = /(^|[\\/])(data|__pycache__|node_modules|\.git|实验截图|_调试残留|输出)([\\/]|$)/i;
+    const tables = [];
+    (function walkSweep(d, depth) {
+      if (depth > 8) return;
+      let ents = [];
+      try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch (e) { return; }
+      for (const e of ents) {
+        const full = path.join(d, e.name);
+        if (e.isDirectory()) { if (!SKIP_WALK.test(full)) walkSweep(full, depth + 1); continue; }
+        if (!TABLE_RE.test(e.name)) continue;
+        tables.push({ full, rel: path.relative(DIR, full).split(path.sep).join('/') });
+      }
+    })(sweepRoot, 0);
+
+    const addedNames = [];
+    for (const t of tables) {
+      const base = t.rel.split('/').pop();
+      const cands = (base && base !== t.rel) ? [t.rel, base] : [t.rel];
+      for (const n of cands) {
+        if (!n || resEntries.some((e) => e.name === n)) continue;
+        // p 必须是真实相对路径（别名名也要指向真文件，否则会登记成占位图）
+        patch('inject-resources', /resources:\s*\[/,
+          (m) => m[0] + `\n    {'name': '${n}', 'path': '${t.rel}'},`);
+        resEntries.push({ name: n, p: t.rel });
+        addedNames.push(n);
+      }
+    }
+    console.log('   （条件表安全网）' + res.unresolvedTables.length + ' 处条件表引用静态解析不出，'
+      + '已补进资源表 ' + addedNames.length + ' 个登记名（覆盖 ' + tables.length + ' 个表文件'
+      + (tables.length ? '：' + tables.slice(0, 4).map((t) => t.rel).join('、') + (tables.length > 4 ? ' …' : '') : '')
+      + '）；扫描根 ' + sweepRoot);
+    problems.push('unresolved-tables:' + res.unresolvedTables.length);
   }
 }
 

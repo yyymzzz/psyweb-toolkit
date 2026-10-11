@@ -1058,6 +1058,30 @@
     if (missing.length) say('   · ⚠️ ' + missing.length + ' 个引用的文件在所选目录里不存在：'
       + missing.slice(0, 5).join('、') + (missing.length > 5 ? ' …' : ''), 'warn');
 
+    // ⑤ 窄口径安全网：解析不出的**条件表**引用（与本地工具同一口径）
+    //    conditionsFile 是运行期表达式时静态拿不到文件名；条件表以 KB 计，
+    //    多带不会撑爆上传，漏带则实验发出去之后才炸。只补表，不补媒体。
+    if (res.unresolvedTables && res.unresolvedTables.length) {
+      var swept = [];
+      index.forEach(function (it) {
+        if (!/\.(xlsx?|csv|tsv|odp)$/i.test(it.name)) return;
+        if (seen[it.rel]) return;
+        seen[it.rel] = 1;
+        // refPath 用"相对基准目录"的路径：运行时就是按这个名字去资源表里查的
+        var relToBase = it.rel;
+        if (baseDir && it.rel.toLowerCase().indexOf(baseDir.toLowerCase() + '/') === 0) {
+          relToBase = it.rel.slice(baseDir.length + 1);
+        }
+        out.push({ rel: it.rel, name: it.name, refPath: relToBase, role: 'table', file: it.file, entry: it.entry });
+        needSet[it.rel] = 1;
+        swept.push(it.rel);
+      });
+      say('   · 安全网：有 ' + res.unresolvedTables.length + ' 处条件表引用静态解析不出（'
+        + res.unresolvedTables.slice(0, 2).join('；') + '），已把所选目录里的条件表一并带上'
+        + (swept.length ? '（+' + swept.length + ' 个：' + swept.slice(0, 3).join('、')
+          + (swept.length > 3 ? ' …' : '') + '）' : '（目录里没有可补的条件表）'), 'warn');
+    }
+
     // ⑤ 透明化：被"看一眼像条件表"却没被任何引用触及的文件，明说跳过（用户可据此质疑）
     var skippedTables = index.filter(function (it) {
       return /\.(xlsx?|csv|tsv|odp)$/i.test(it.name) && !needSet[it.rel];

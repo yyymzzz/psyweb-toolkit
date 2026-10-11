@@ -1112,7 +1112,11 @@
  *     refs: [{ path, role: 'table'|'media', source, missing? }],  // 相对 psyexp 所在目录
  *     constants: { STIM_DIR: '../材料', ... },
  *     notes: [...],        // 人话说明（降级必须在这里说清楚，不许静默）
- *     degraded: bool       // true = 静态解析不足以覆盖，调用方应改用保守筛选
+ *     degraded: bool,      // true = 静态解析不足以覆盖，调用方应改用保守筛选
+ *     unresolved: [...],      // 解析不出的**媒体**引用（人话描述）
+ *     unresolvedTables: [...] // 解析不出的**条件表**引用。调用方必须把所选目录里的
+ *                             // 条件表一并带上（表以 KB 计），否则实验会跑到一半
+ *                             // 报 unknown resource —— 而 refs 非空时 degraded 仍是 false。
  *   }
  * ========================================================================== */
 (function (root, factory) {
@@ -1321,6 +1325,11 @@
   function resolve(opts) {
     opts = opts || {};
     var notes = [], refs = [], seen = {};
+    // 条件表引用里"知道有、但静态解析不出具体文件"的那些（例如
+    // conditionsFile="$\"group{}.xlsx\".format(expInfo['group'])"）。
+    // ⚠️ 必须与"这个实验没有任何引用"分开：前者宁可多带，后者是正常（纯文字实验）。
+    // 曾经混为一谈 → 页面显示"闭包给出 0 个文件"，静默出一个缺条件表的包。
+    var unresolvedTables = [];
     var bad = function (msg) { notes.push(msg); };
     var addRef = function (p, role, source) {
       var key = p;
@@ -1338,7 +1347,7 @@
     //    （一路走保守筛选）。两个入口必须都认。
     if (!opts.psyexpText && !opts.jsText) {
       bad('⚠️ 既没有 .psyexp 也没有导出脚本 —— 无法解析引用闭包，改用保守筛选（按扩展名保留）');
-      return { refs: [], constants: {}, notes: notes, degraded: true };
+      return { refs: [], constants: {}, notes: notes, degraded: true, unresolvedTables: [] };
     }
 
     var scan;
@@ -1346,7 +1355,7 @@
       scan = opts.psyexpText ? scanPsyexp(opts.psyexpText) : { components: [], loops: [], fileParams: [] };
     } catch (e) {
       bad('⚠️ .psyexp 解析失败（' + (e && e.message) + '）—— 改用保守筛选');
-      return { refs: [], constants: {}, notes: notes, degraded: true };
+      return { refs: [], constants: {}, notes: notes, degraded: true, unresolvedTables: [] };
     }
 
     // ---- ① 折叠路径常量（CodeComponent 的 code 类参数）----
@@ -1364,17 +1373,61 @@
     if (constNames.length) bad('路径常量已折叠：' + constNames.join('、'));
 
     // ---- ② 条件表：循环声明的 + 文件型参数里的 ----
+    /* 动态 conditionsFile 的一线生机：Builder 允许把条件表名写在**循环自己的**
+     * 内联 conditions 里，再用 $变量 引用那一列。例如官方 demo faceHouseBlocks：
+     *   <Param name="conditions"     val="[{u'condsFile': u'faceTrials.xlsx'}, …]"/>
+     *   <Param name="conditionsFile" val="$condsFile"/>
+     * 这不是猜目录、也不是猜文件名 —— 值就写在 psyexp 里，属"读内容判断"。
+     * 解析出来就按普通条件表进闭包；解析不出才计入 unresolvedTables。 */
+    function tablesFromInlineLoop(lp, raw) {
+      var bare = String(raw).replace(/^\$/, '').trim();
+      if (!/^[A-Za-z_]\w*$/.test(bare)) return [];   // 表达式形态（xxx.format(...)）没有列可查
+      var p = lp.params && lp.params.conditions;
+      if (!p) return [];
+      var txt = String(p.decoded == null ? '' : p.decoded);
+      if (!txt) return [];
+      var re = new RegExp("['\"]" + bare + "['\"]\\s*:\\s*[uU]?['\"]([^'\"]+)['\"]", 'g');
+      var m, out = [];
+      while ((m = re.exec(txt)) !== null) {
+        var v = m[1].trim();
+        if (!v) continue;
+        var rel = normPath(v);
+        if (out.indexOf(rel) >= 0) continue;
+        if (exists && !exists(rel)) continue;        // 值不是真实存在的文件 → 不算解析成功
+        out.push(rel);
+      }
+      return out;
+    }
+
     var tables = [];
     scan.loops.forEach(function (lp) {
       var cf = cleanVal(lp.conditionsFile);
       if (!cf) return;
-      if (isDynamic(cf)) { bad('循环 ' + lp.name + ' 的 conditionsFile 是动态表达式（' + cf + '），跳过'); return; }
+      if (isDynamic(cf)) {
+        var fromInline = tablesFromInlineLoop(lp, cf);
+        if (fromInline.length) {
+          fromInline.forEach(function (rel) {
+            if (addRef(rel, 'table', 'loop:' + lp.name + ' ← 内联 conditions 列')) tables.push(rel);
+          });
+          bad('循环 ' + lp.name + ' 的 conditionsFile 是动态表达式（' + cf
+            + '），已从该循环的内联 conditions 列解析出 ' + fromInline.length + ' 张表：' + fromInline.join('、'));
+          return;
+        }
+        bad('⚠️ 循环 ' + lp.name + ' 的 conditionsFile 是动态表达式（' + cf + '），静态解析不出具体文件');
+        unresolvedTables.push('loop:' + lp.name + ' → ' + cf);
+        return;
+      }
       if (addRef(normPath(cf), 'table', 'loop:' + lp.name)) tables.push(normPath(cf));
     });
     scan.fileParams.forEach(function (fp) {
       if (!/conditions?file/i.test(fp.name)) return;
       var v = cleanVal(fp.val);
-      if (!v || isDynamic(v)) return;
+      if (!v) return;
+      if (isDynamic(v)) {
+        bad('⚠️ ' + fp.component + '.' + fp.name + ' 是动态表达式（' + v + '），静态解析不出具体文件');
+        unresolvedTables.push('param:' + fp.component + '.' + fp.name + ' → ' + v);
+        return;
+      }
       if (addRef(normPath(v), 'table', 'param:' + fp.component + '.' + fp.name)) tables.push(normPath(v));
     });
 
@@ -1536,20 +1589,27 @@
       if (miss.length) bad('⚠️ 有 ' + miss.length + ' 个引用的文件按代码给出的路径没找到：' + miss.slice(0, 5).map(function (r) { return r.path; }).join('、'));
     }
 
+    if (unresolvedTables.length) {
+      bad('⚠️ 有 ' + unresolvedTables.length + ' 处条件表引用静态解析不出（'
+        + unresolvedTables.slice(0, 3).join('；') + (unresolvedTables.length > 3 ? ' …' : '')
+        + '）—— 调用方应把所选目录里的条件表一并带上（表体积以 KB 计）');
+    }
+
     if (!refs.length) {
       // 一个引用都没有 —— 分两种情况，绝不能混：
       //   · 没有 psyexp（纯网页版入口）：主脚本清单也空 => 我们**根本不知道**要哪些文件，
       //     必须降级（静默传空集会让用户在"打包成功"的假象里丢资源）。
       //   · 有 psyexp：纯文字/纯代码实验本来就零资源，属正常，不是降级。
+      //     ⚠️ 但"解析不出条件表"不算零资源 —— 那种情况必须降级，见下面的 unresolvedTables。
       if (!opts.psyexpText) {
         bad('⚠️ 主脚本里没有可用的 resources 清单，且没带 .psyexp —— 无法确定需要哪些文件，改用保守筛选（按扩展名保留）');
-        return { refs: [], constants: consts, notes: notes, degraded: true, unresolved: unresolved };
+        return { refs: [], constants: consts, notes: notes, degraded: true, unresolved: unresolved, unresolvedTables: unresolvedTables };
       }
-      if (!unresolved.length) {
+      if (!unresolved.length && !unresolvedTables.length) {
         bad('该 psyexp 没有任何文件型引用（纯文字/纯代码实验属正常）。');
       } else {
         bad('⚠️ 所有文件型引用都解析不出来 —— 改用保守筛选（按扩展名保留）');
-        return { refs: [], constants: consts, notes: notes, degraded: true, unresolved: unresolved };
+        return { refs: [], constants: consts, notes: notes, degraded: true, unresolved: unresolved, unresolvedTables: unresolvedTables };
       }
     }
 
@@ -1559,6 +1619,7 @@
       notes: notes,
       degraded: false,
       unresolved: unresolved,
+      unresolvedTables: unresolvedTables,
       tables: Object.keys(tableRead)
     };
   }
@@ -2487,6 +2548,30 @@
     });
     if (missing.length) say('   · ⚠️ ' + missing.length + ' 个引用的文件在所选目录里不存在：'
       + missing.slice(0, 5).join('、') + (missing.length > 5 ? ' …' : ''), 'warn');
+
+    // ⑤ 窄口径安全网：解析不出的**条件表**引用（与本地工具同一口径）
+    //    conditionsFile 是运行期表达式时静态拿不到文件名；条件表以 KB 计，
+    //    多带不会撑爆上传，漏带则实验发出去之后才炸。只补表，不补媒体。
+    if (res.unresolvedTables && res.unresolvedTables.length) {
+      var swept = [];
+      index.forEach(function (it) {
+        if (!/\.(xlsx?|csv|tsv|odp)$/i.test(it.name)) return;
+        if (seen[it.rel]) return;
+        seen[it.rel] = 1;
+        // refPath 用"相对基准目录"的路径：运行时就是按这个名字去资源表里查的
+        var relToBase = it.rel;
+        if (baseDir && it.rel.toLowerCase().indexOf(baseDir.toLowerCase() + '/') === 0) {
+          relToBase = it.rel.slice(baseDir.length + 1);
+        }
+        out.push({ rel: it.rel, name: it.name, refPath: relToBase, role: 'table', file: it.file, entry: it.entry });
+        needSet[it.rel] = 1;
+        swept.push(it.rel);
+      });
+      say('   · 安全网：有 ' + res.unresolvedTables.length + ' 处条件表引用静态解析不出（'
+        + res.unresolvedTables.slice(0, 2).join('；') + '），已把所选目录里的条件表一并带上'
+        + (swept.length ? '（+' + swept.length + ' 个：' + swept.slice(0, 3).join('、')
+          + (swept.length > 3 ? ' …' : '') + '）' : '（目录里没有可补的条件表）'), 'warn');
+    }
 
     // ⑤ 透明化：被"看一眼像条件表"却没被任何引用触及的文件，明说跳过（用户可据此质疑）
     var skippedTables = index.filter(function (it) {
