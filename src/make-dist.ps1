@@ -20,10 +20,18 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $ROOT = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$PKG  = Join-Path $ROOT 'dist\psyweb-工具包'
+$DIST = [System.IO.Path]::GetFullPath((Join-Path $ROOT 'dist'))
+$PKG  = [System.IO.Path]::GetFullPath((Join-Path $DIST 'psyweb-工具包'))
+$ZIP  = [System.IO.Path]::GetFullPath((Join-Path $DIST 'psyweb-工具包.zip'))
+foreach ($target in @($PKG,$ZIP)) {
+    if (-not $target.StartsWith($DIST + [System.IO.Path]::DirectorySeparatorChar,
+        [System.StringComparison]::OrdinalIgnoreCase)) { throw "拒绝操作：产物路径超出 dist：$target" }
+}
 
 if (-not (Test-Path -LiteralPath $NodeExe)) { throw "找不到 node.exe：$NodeExe（可用 -NodeExe 指定）" }
-foreach ($need in @('src\tool-server.js','src\build-portable.js','src\pack-portable.js','vendor\psychojs-2026.2.3.iife.js')) {
+foreach ($need in @('src\tool-server.js','src\build-portable.js','src\pack-portable.js',
+    'vendor\psychojs-2026.2.3.iife.js','vendor.lock.json','启动psyweb工具.cmd',
+    'node_modules\fast-xml-parser','node_modules\qrcode-generator')) {
     if (-not (Test-Path -LiteralPath (Join-Path $ROOT $need))) { throw "缺少必要文件：$need" }
 }
 
@@ -176,8 +184,7 @@ Write-Host ("`n包目录: {0}" -f $PKG)
 Write-Host ("包大小: {0:N1} MB" -f $totalMB)
 
 if (-not $SkipZip) {
-    $zip = Join-Path $ROOT 'dist\psyweb-工具包.zip'
-    if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
-    Compress-Archive -Path "$PKG\*" -DestinationPath $zip -CompressionLevel Optimal
-    Write-Host ("压缩包: {0}  ({1:N1} MB)" -f $zip, ((Get-Item $zip).Length / 1MB))
+    if (Test-Path -LiteralPath $ZIP) { Remove-Item -LiteralPath $ZIP -Force }
+    Compress-Archive -Path "$PKG\*" -DestinationPath $ZIP -CompressionLevel Optimal
+    Write-Host ("压缩包: {0}  ({1:N1} MB)" -f $ZIP, ((Get-Item $ZIP).Length / 1MB))
 }
