@@ -74,12 +74,19 @@ js = fixed.code;
 const fixSummary = fixed.changes.length ? fixed.changes.map((c) => `#${c.line} ${c.kind}`).join('; ') : '无';
 
 // ---------------------------------------------------------------- 2. 收集资源并内联
-const resEntries = [...js.matchAll(/\{\s*'name':\s*'([^']+)',\s*'path':\s*'([^']+)'\s*\}/g)]
-  .map((m) => ({ name: m[1], p: m[2] }));
+const RC = require('./ref-closure.js');
+js = RC.repairTrialListFormat(js);
+try { js = RC.ensureResources(js); } catch (e) { must(false, e.message); }
+const resEntries = RC.scanJsManifest(js).map((e) => ({ name: e.name, p: e.path }));
+const defaults = RC.compilerDefaults(js).filter((e) => !resEntries.some((r) => r.name === e.name));
+if (defaults.length) {
+  js = RC.injectResources(js, defaults);
+  defaults.forEach((e) => resEntries.push({name:e.name, p:e.path}));
+  applied.push('compiler-default-image');
+}
 // 允许**零资源**：纯文字 + 按键一类实验（很常见）根本没有图片/音频/条件文件。
 // 早期版本 here 写成 must(resEntries.length > 0) 会把这类实验直接判失败
 // （被探针用空实验抓到）。真正要校验的是"resources 数组存在"。
-must(/resources:\s*\[/.test(js), '在生成代码里找不到 resources 列表');
 if (!resEntries.length) console.log('   （该实验没有外部资源：跳过资源内联）');
 
 // 2a. 资源清单补全（实测必需的补丁）
@@ -100,7 +107,6 @@ const PSYEXP = arg('psyexp');
 let injected = [];
 let refReport = [];
 if (PSYEXP && fs.existsSync(PSYEXP)) {
-  const RC = require('./ref-closure.js');
   const psyexpText = fs.readFileSync(PSYEXP, 'utf8');
 
   // 条件表读取（相对 psyexp 目录）：csv/tsv 直接读文本；xlsx/xls 用 SheetJS
@@ -129,14 +135,32 @@ if (PSYEXP && fs.existsSync(PSYEXP)) {
   // exists 只认**精确路径**（相对 psyexp 目录）。
   // 不用"同目录兜底"：那会把 os.path.join(PRAC_DIR, image) 与
   // os.path.join(STIM_DIR, image) 两组候选混在一起，凭空多出一倍假引用。
+  const candidateTables = [];
+  const initial = RC.resolve({ psyexpText: psyexpText });
+  if (!initial.refs.length && initial.unresolvedTables.length) {
+    const sweepRoot = SWEEP_DIR && fs.existsSync(SWEEP_DIR) ? SWEEP_DIR : DIR;
+    const skip = /(^|[\\/])(data|__pycache__|node_modules|\.git|实验截图|_调试残留|输出)([\\/]|$)/i;
+    (function walk(d, depth) {
+      if (depth > 8) return;
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const full = path.join(d, e.name);
+        if (e.isDirectory()) { if (!skip.test(full)) walk(full, depth + 1); }
+        else if (/\.(xlsx?|csv|tsv|odp)$/i.test(e.name)) candidateTables.push(path.relative(DIR, full).split(path.sep).join('/'));
+      }
+    })(sweepRoot, 0);
+  }
   const res = RC.resolve({
     psyexpRel: path.basename(PSYEXP),
     psyexpText: psyexpText,
+    candidateTables: candidateTables,
     getTableRows: getTableRows,
     exists: (rel) => fs.existsSync(path.join(DIR, rel))
   });
 
   res.notes.forEach((n) => console.log('   （引用解析）' + n));
+  if (!initial.refs.length && initial.unresolvedTables.length) {
+    must(candidateTables.length > 0 && !res.degraded, '动态条件表两遍解析仍无法确定资源；请提供可读取的条件表及明确引用，未生成不完整包');
+  }
 
   const found = new Set();
   const notFound = [];
@@ -159,8 +183,8 @@ if (PSYEXP && fs.existsSync(PSYEXP)) {
 
   injected = [...found].filter((n) => !resEntries.some((e) => e.p === n || e.name === n));
   if (injected.length) {
-    patch('inject-resources', /resources:\s*\[/,
-      (m) => m[0] + '\n    ' + injected.map((n) => `{'name': '${n}', 'path': '${n}'},`).join('\n    '));
+    js = RC.injectResources(js, injected.map((n) => ({ name: n, path: n })));
+    applied.push('inject-resources');
     injected.forEach((n) => resEntries.push({ name: n, p: n }));
   }
 
@@ -197,8 +221,8 @@ if (PSYEXP && fs.existsSync(PSYEXP)) {
       for (const n of cands) {
         if (!n || resEntries.some((e) => e.name === n)) continue;
         // p 必须是真实相对路径（别名名也要指向真文件，否则会登记成占位图）
-        patch('inject-resources', /resources:\s*\[/,
-          (m) => m[0] + `\n    {'name': '${n}', 'path': '${t.rel}'},`);
+        js = RC.injectResources(js, [{ name: n, path: t.rel }]);
+        applied.push('inject-resources');
         resEntries.push({ name: n, p: t.rel });
         addedNames.push(n);
       }
@@ -401,4 +425,4 @@ if (fixed.todos.length) {
 if (problems.length) {
   console.log('\n  ⚠️ 打包告警: ' + problems.join(', '));
 }
-console.log('\n  自测参数: 打开时加 ?autotest=1 可自动驱动按键并导出数据');
+if (AUTOTEST) console.log('\n  自测参数: 打开时加 ?autotest=1 可自动驱动按键并导出数据');

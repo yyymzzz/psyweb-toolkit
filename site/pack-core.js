@@ -118,6 +118,11 @@
    * @param opts.title   实验标题
    */
   async function pack(opts) {
+    // Offline construction evaluates this module before the shared parser.
+    // Resolve its dependency when packing, after all inline modules are ready.
+    var RC = (typeof module === 'object' && module.exports) ? require('../src/ref-closure.js')
+      : (typeof self !== 'undefined' ? self : globalThis).PsywebRefClosure;
+    if (!RC) throw new Error('缺少共享资源解析器，请重新构建工具');
     var files = opts.files || [];
     var assets = opts.assets || {};
     var log = [];
@@ -158,10 +163,14 @@
     fixed.todos.forEach(function (t) { say('  ⚠️ ' + t, 'warn'); });
 
     // ② 资源清单：JS 里声明的 + 拖进来的（后者兜底，防止导出物漏登记）
-    var declared = [];
-    var re = /\{\s*'name':\s*'([^']+)',\s*'path':\s*'([^']+)'\s*\}/g, m2;
-    while ((m2 = re.exec(js)) !== null) declared.push({ name: m2[1], p: m2[2] });
-    if (!/resources:\s*\[/.test(js)) throw new Error('在主脚本里找不到 resources 列表 —— 这不是 PsychoPy 导出的实验脚本？');
+    js = RC.repairTrialListFormat(js);
+    js = RC.ensureResources(js);
+    var declared = RC.scanJsManifest(js).map(function (e) { return {name:e.name, p:e.path}; });
+    var defaults = RC.compilerDefaults(js).filter(function(e) { return !declared.some(function(d) { return d.name === e.name; }); });
+    if (defaults.length) {
+      js = RC.injectResources(js, defaults);
+      defaults.forEach(function(e) { declared.push({name:e.name, p:e.path}); });
+    }
 
     var byName = {};
     files.forEach(function (f) {
@@ -186,9 +195,7 @@
         if (!f) return;                                  // 工程里引用了但这个文件夹没带
         declared.push({ name: n, p: n });
         declaredNames.push(n);
-        var patcherP = makePatcher(function () { return js; }, function (v) { js = v; }, []);
-        patcherP('inject-resources', /resources:\s*\[/,
-          function (m) { return m[0] + "\n    {'name': '" + n + "', 'path': '" + n + "'},"; });
+        js = RC.injectResources(js, [{name:n, path:n}]);
         added++;
       });
       say('用 .psyexp 校验资源清单：' + names.length + ' 个引用，补齐 ' + added + ' 个漏登记的');
@@ -212,14 +219,7 @@
         addList.push({ name: d.name, path: d.path || d.name });
       });
       if (addList.length) {
-        var patcherD = makePatcher(function () { return js; }, function (v) { js = v; }, []);
-        patcherD('inject-resources', /resources:\s*\[/,
-          function (m) {
-            return m[0] + '\n    ' + addList.map(function (d) {
-              return "{'name': '" + String(d.name).replace(/'/g, "\\'") + "', 'path': '"
-                + String(d.path).replace(/'/g, "\\'") + "'},";
-            }).join('\n    ');
-          });
+        js = RC.injectResources(js, addList);
         say('按引用闭包登记资源 ' + addList.length + ' 个（用运行时真正会请求的路径名，不是文件名）');
       }
     }
@@ -236,9 +236,7 @@
     });
     // 补进 JS 的 resources 数组，否则实验运行时取不到
     if (extra.length) {
-      var patcher0 = makePatcher(function () { return js; }, function (v) { js = v; }, []);
-      patcher0('inject-resources', /resources:\s*\[/,
-        function (m) { return m[0] + '\n    ' + extra.map(function (f) { return "{'name': '" + f.name + "', 'path': '" + f.name + "'},"; }).join('\n    '); });
+      js = RC.injectResources(js, extra.map(function(f) { return {name:f.name, path:f.name}; }));
     }
 
     // 2d. 反斜杠别名：清单里的 name 常写成 Windows 形式（'..\数据\试次表.csv'），
@@ -260,13 +258,7 @@
       aliasList.push({ name: slash, path: slash });
     });
     if (aliasList.length) {
-      var patcherAlias = makePatcher(function () { return js; }, function (v) { js = v; }, []);
-      patcherAlias('inject-resources', /resources:\s*\[/,
-        function (m) {
-          return m[0] + '\n    ' + aliasList.map(function (d) {
-            return "{'name': '" + d.name.replace(/'/g, "\\'") + "', 'path': '" + d.path.replace(/'/g, "\\'") + "'},";
-          }).join('\n    ');
-        });
+      js = RC.injectResources(js, aliasList);
       aliasList.forEach(function (d) { declared.push({ name: d.name, p: d.path }); });
       say('补正斜杠别名 ' + aliasList.length + ' 条（运行时按正斜杠查资源表）：'
         + aliasList.map(function (d) { return d.name; }).slice(0, 3).join('、')

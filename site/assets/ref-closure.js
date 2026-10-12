@@ -283,6 +283,13 @@
       bad('⚠️ .psyexp 解析失败（' + (e && e.message) + '）—— 改用保守筛选');
       return { refs: [], constants: {}, notes: notes, degraded: true, unresolvedTables: [] };
     }
+    // Older Builder files label image/sound/movie as str although they are files.
+    scan.components.forEach(function (component) {
+      ['image', 'sound', 'movie'].forEach(function (name) {
+        var param = component.params[name];
+        if (param && param.valType !== 'file') scan.fileParams.push({component:component.name, name:name, val:param.decoded});
+      });
+    });
 
     // ---- ① 折叠路径常量（CodeComponent 的 code 类参数）----
     var codeTexts = [];
@@ -362,7 +369,9 @@
     // 主脚本里那份 resources 清单就是唯一的一手声明。清单不完整（动态引用的
     // 媒体它不写），但凡是它写了的都必须带上 —— 否则运行时 unknown resource。
     if (opts.jsText) {
-      var man = scanJsManifest(opts.jsText);
+      var man;
+      try { man = scanJsManifest(opts.jsText); }
+      catch (e) { bad('⚠️ 主脚本资源结构不可识别：' + e.message); man = []; }
       if (man.length) {
         var remote = 0;
         man.forEach(function (e) {
@@ -386,18 +395,25 @@
     }
 
     // ---- ③ 读条件表内容 → 建"列名 → 值列表"索引 ----
+    // 零引用的动态表先读小条件表，再从列值推媒体；已有引用保持原精度。
+    if (!refs.length && unresolvedTables.length && opts.candidateTables) {
+      opts.candidateTables.forEach(function (rel) {
+        rel = normPath(rel);
+        if (looksLikeTable(rel) && addRef(rel, 'table', 'dynamic-table-sweep')) tables.push(rel);
+      });
+    }
     var columns = {};          // 列名 → [值...]
     var columnsFrom = {};      // 列名 → [来源表...]
-    var tableRead = {}, pending = tables.slice(), guard = 0;
+    var tableRead = {}, pending = tables.slice(), guard = 0, tableFailures = 0;
     while (pending.length && guard++ < 4) {
       var batch = pending; pending = [];
       batch.forEach(function (rel) {
         if (tableRead[rel]) return;
         tableRead[rel] = true;
-        if (!getTableRows) { bad('没有提供条件表读取器，无法读取 ' + rel + ' 的内容'); return; }
+        if (!getTableRows) { tableFailures++; bad('没有提供条件表读取器，无法读取 ' + rel + ' 的内容'); return; }
         var rows;
         try { rows = getTableRows(rel); } catch (e) { rows = null; }
-        if (!rows || !rows.length) { bad('条件表读不出来：' + rel + '（实验运行时可能取不到该表）'); return; }
+        if (!rows || !rows.length) { tableFailures++; bad('条件表读不出来：' + rel + '（实验运行时可能取不到该表）'); return; }
         var header = (rows[0] || []).map(function (h) { return String(h == null ? '' : h).trim(); });
         if (!header.some(function (h) { return h !== ''; })) { bad('条件表 ' + rel + ' 首行不是表头，未纳入列索引'); return; }
         for (var r = 1; r < rows.length; r++) {
@@ -543,7 +559,7 @@
       refs: refs,
       constants: consts,
       notes: notes,
-      degraded: false,
+      degraded: (unresolved.length > 0 || tableFailures > 0) && refs.some(function (r) { return r.source === 'dynamic-table-sweep'; }),
       unresolved: unresolved,
       unresolvedTables: unresolvedTables,
       tables: Object.keys(tableRead)
@@ -560,26 +576,126 @@
    *    完整性靠"条件表内容反查 + 路径常量折叠"，这正是 ref-closure 存在的理由。
    */
   function scanJsManifest(jsText) {
-    var text = String(jsText == null ? '' : jsText);
-    var m = /resources\s*:\s*\[/.exec(text);
-    if (!m) return [];
-    var start = m.index + m[0].length - 1, depth = 0, end = -1;
-    for (var i = start; i < text.length; i++) {
-      var c = text.charAt(i);
-      if (c === '[') depth++;
-      else if (c === ']') { depth--; if (depth === 0) { end = i; break; } }
-    }
-    if (end < 0) return [];
-    var body = text.slice(start + 1, end);
-    var out = [], re = /\{([^{}]*)\}/g, g;
-    while ((g = re.exec(body)) !== null) {
-      var seg = g[1];
-      var nm = /['"]?name['"]?\s*:\s*(['"])([\s\S]*?)\1/.exec(seg);
-      var pm = /['"]?path['"]?\s*:\s*(['"])([\s\S]*?)\1/.exec(seg);
-      if (!nm && !pm) continue;
-      out.push({ name: nm ? nm[2] : (pm ? pm[2] : ''), path: pm ? pm[2] : (nm ? nm[2] : '') });
+    return inspectStart(String(jsText || '')).entries;
+  }
+
+  // Small lexical reader: literals/comments/regexes cannot masquerade as start calls.
+  function jsTokens(src) {
+    var out = [], i = 0, operand = true, parens = [];
+    function push(v, start, kind) { out.push({v:v, start:start, end:i, kind:kind}); }
+    while (i < src.length) {
+      var c = src[i], start = i;
+      if (/\s/.test(c)) { i++; continue; }
+      if (src.slice(i, i+2) === '//') { i = src.indexOf('\n', i); if(i < 0) break; continue; }
+      if (src.slice(i, i+2) === '/*') { var e = src.indexOf('*/', i+2); if(e < 0) throw Error('Unclosed comment'); i=e+2; continue; }
+      if (c === '"' || c === "'" || c === '`') {
+        var quote = c; i++; var value = '', closed = false;
+        while(i < src.length) {
+          c=src[i++]; if(c === quote) {closed=true; break;}
+          if(c === '\\') {
+            var esc=src[i++], codes={n:'\n',r:'\r',t:'\t',b:'\b',f:'\f',v:'\v','0':'\0'};
+            if(esc==='u' || esc==='x') {var n=esc==='u'?4:2, hex=src.slice(i,i+n); if(!new RegExp('^[0-9a-f]{'+n+'}$','i').test(hex)) throw Error('Unsupported string escape'); value+=String.fromCharCode(parseInt(hex,16)); i+=n;}
+            else if(esc==='\n') {} else if(esc==='\r') {if(src[i]==='\n') i++;}
+            else value+=Object.prototype.hasOwnProperty.call(codes,esc)?codes[esc]:esc;
+          } else value+=c;
+        }
+        if(!closed) throw Error('Unclosed literal');
+        push(value,start,quote==='`'?'template':'string'); operand=false; continue;
+      }
+      if(c==='/' && operand) {
+        i++; var bracket=false, done=false;
+        while(i<src.length) {c=src[i++]; if(c==='\\') {i++; continue;} if(c==='[') bracket=true; if(c===']') bracket=false; if(c==='/'&&!bracket) {done=true; break;} }
+        if(!done) throw Error('Unclosed regex'); while(/[a-z]/i.test(src[i]||'') && i<src.length) i++;
+        push('regex',start,'regex'); operand=false; continue;
+      }
+      var word=/^[A-Za-z_$][\w$]*|^\d+(?:\.\d+)?/.exec(src.slice(i));
+      if(word) {i+=word[0].length; push(word[0],start,'word'); operand=/^(return|throw|case|delete|void|typeof|new|in|of|yield|await)$/.test(word[0]); continue;}
+      var previous=out[out.length-1];
+      if(c==='(') parens.push(!!(previous && /^(if|while|for|with|switch|catch)$/.test(previous.v)));
+      i++; push(c,start,'punct'); operand=c===')' ? !!parens.pop() : !/[\]}]/.test(c) && c!=='.';
     }
     return out;
+  }
+  function inspectStart(src) {
+    var t=jsTokens(src), matches=[];
+    function is(k,v) {return t[k] && t[k].kind!=='string' && t[k].kind!=='template' && t[k].v===v;}
+    for(var k=0;k<t.length;k++) if(is(k,'psychoJS')&&is(k+1,'.')&&is(k+2,'start')&&is(k+3,'(')) {
+      if(is(k-1,'.')||is(k-1,'new')) throw Error('Expected direct psychoJS.start');
+      matches.push(k+4);
+    }
+    if(matches.length!==1) throw Error('Expected one direct psychoJS.start call; found '+matches.length);
+    var p=matches[0], fields={}, entries=[], arrayStart=null, arrayEnd=null;
+    function need(v) {if(!is(p,v)) throw Error('Unsupported psychoJS.start structure: expected '+v); return t[p++];}
+    need('{');
+    while(!is(p,'}')) {
+      var key=t[p++]; if(!key || !/^(expName|expInfo|resources)$/.test(key.v)||fields[key.v]) throw Error('Unknown or duplicate start field');
+      fields[key.v]=true; need(':');
+      if(key.v!=='resources') {need(key.v);}
+      else {
+        arrayStart=need('[').start;
+        while(!is(p,']')) {
+          need('{'); var item={};
+          while(!is(p,'}')) {
+            var prop=t[p++]; if(!prop||!/^(name|path)$/.test(prop.v)||Object.prototype.hasOwnProperty.call(item,prop.v)) throw Error('Unsupported resource field');
+            need(':'); var val=t[p++]; if(!val||val.kind!=='string') throw Error('Resource name/path must be string literals'); item[prop.v]=val.v;
+            if(is(p,',')) p++; else if(!is(p,'}')) throw Error('Unsupported resource object');
+          }
+          need('}'); if(typeof item.name!=='string'||typeof item.path!=='string') throw Error('Resource needs name and path'); entries.push(item);
+          if(is(p,',')) p++; else if(!is(p,']')) throw Error('Unsupported resource array');
+        }
+        arrayEnd=need(']').end;
+      }
+      if(is(p,',')) p++; else if(!is(p,'}')) throw Error('Unsupported start object');
+    }
+    var close=need('}'); need(')');
+    if(!fields.expName||!fields.expInfo) throw Error('Missing expName/expInfo');
+    return {entries:entries, arrayStart:arrayStart, arrayEnd:arrayEnd, close:close.start};
+  }
+  function ensureResources(src) {
+    var found=inspectStart(src);
+    if(found.arrayStart!==null) return src;
+    var prefix=src.slice(0,found.close), last=jsTokens(prefix).slice(-1)[0];
+    return prefix+(last.v===','?'':',')+' resources: []'+src.slice(found.close);
+  }
+  function compilerDefaults(src) {
+    var t=jsTokens(src);
+    for(var i=0;i<t.length-7;i++) {
+      if(t[i].v!=='new'||t[i+1].v!=='visual'||t[i+2].v!=='.'||t[i+3].v!=='ImageStim'||t[i+4].v!=='('||t[i+5].v!=='{') continue;
+      var depth=1;
+      for(var j=i+6;j<t.length&&depth;j++) {
+        if(t[j].v==='{'&&t[j].kind==='punct')depth++;
+        if(t[j].v==='}'&&t[j].kind==='punct')depth--;
+        if(depth===1&&t[j].v==='image'&&t[j+1]?.v===':'&&t[j+2]?.kind==='string'&&t[j+2].v==='default.png') {
+          return [{name:'default.png',path:'https://pavlovia.org/assets/default/default.png'}];
+        }
+      }
+    }
+    return [];
+  }
+  function repairTrialListFormat(src) {
+    var t=jsTokens(src), replacements=[];
+    for(var i=2;i<t.length-3;i++) {
+      if(t[i].kind!=='string'||t[i-1].v!==':'||t[i-2].v!=='trialList'
+          ||t[i+1].v!=='.'||t[i+2].v!=='format'||t[i+3].v!=='('||t[i].v.indexOf('{}')<0) continue;
+      if(t[i].v!=='group{}.xlsx'||t[i+4]?.v!=='expInfo'||t[i+5]?.v!=='['
+          ||t[i+6]?.kind!=='string'||t[i+6].v!=='group'||t[i+7]?.v!==']'||t[i+8]?.v!==')') {
+        throw Error('Unsupported automatic trialList format expression');
+      }
+      var value='group{0}.xlsx';
+      replacements.push({start:t[i].start,end:t[i].end,value:JSON.stringify(value).split('<').join('\\u003c')});
+    }
+    for(var j=replacements.length-1;j>=0;j--) {
+      var r=replacements[j];src=src.slice(0,r.start)+r.value+src.slice(r.end);
+    }
+    return src;
+  }
+  function injectResources(src, entries) {
+    src=ensureResources(src); var found=inspectStart(src);
+    var names=Object.create(null); found.entries.forEach(function(e){names[e.name]=e.path;});
+    entries=entries.filter(function(e){ var name=String(e.name), path=String(e.path); if(Object.prototype.hasOwnProperty.call(names,name)){if(names[name]!==path) throw Error('Conflicting resource name');return false;} names[name]=path;return true;});
+    if(!entries.length) return src;
+    var old=src.slice(found.arrayStart+1,found.arrayEnd-1), values=entries.map(function(e){return JSON.stringify({name:String(e.name),path:String(e.path)}).split('<').join('\\u003c').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029');}).join(',');
+    return src.slice(0,found.arrayStart+1)+values+(values&&old.trim()?',':'')+old+src.slice(found.arrayEnd-1);
   }
   function isRemotePath(p) { return /^(https?:)?\/\//i.test(String(p == null ? '' : p)); }
 
@@ -601,6 +717,11 @@
     resolve: resolve,
     scanPsyexp: scanPsyexp,
     scanJsManifest: scanJsManifest,
+    inspectStart: inspectStart,
+    ensureResources: ensureResources,
+    injectResources: injectResources,
+    compilerDefaults: compilerDefaults,
+    repairTrialListFormat: repairTrialListFormat,
     isRemotePath: isRemotePath,
     foldConstants: foldConstants,
     evalExpr: evalExpr,

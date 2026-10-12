@@ -1002,6 +1002,7 @@
       return RC.resolve({
         psyexpRel: psy ? psy.name : main.name,
         psyexpText: psyText, jsText: jsText,
+        candidateTables: candidateTables,
         getTableRows: rows ? function (rel) { return rows[rel] !== undefined ? rows[rel] : null; } : null,
         exists: rows ? exists : null
       });
@@ -1009,6 +1010,16 @@
 
     // ① 先只解析入口（不读条件表），得到"要读哪几张表"
     var p1 = resolveOnce(null);
+    var candidateTables = [];
+    if (!p1.refs.length && p1.unresolvedTables.length) {
+      index.forEach(function (it) {
+        if (!/\.(xlsx?|csv|tsv|odp)$/i.test(it.name)) return;
+        var a = baseDir.split('/').filter(Boolean), b = it.rel.split('/');
+        while (a.length && b.length && a[0].toLowerCase() === b[0].toLowerCase()) { a.shift(); b.shift(); }
+        candidateTables.push(a.map(function () { return '..'; }).concat(b).join('/'));
+      });
+      p1 = resolveOnce(null);
+    }
     var tableRefs = (p1.tables || []).slice();
     p1.notes.forEach(function (n) { if (/清单|常量/.test(n)) say('   · ' + n); });
 
@@ -1036,6 +1047,24 @@
       }
     }
     if (needPako && XR) log('   （xlsx 用 pako 在浏览器里解包，与 Node 侧 SheetJS 结果对拍一致）');
+
+    // A block table may name trial tables. Materialize newly discovered tables
+    // before the final media pass; synchronous Node readers already do this.
+    for (var pass = 0; pass < 4; pass++) {
+      var nested = resolveOnce(rows).tables || [];
+      var unread = nested.filter(function (ref) { return rows[ref] === undefined; });
+      if (!unread.length) break;
+      for (var ni = 0; ni < unread.length; ni++) {
+        var nr = unread[ni], nt = findInIndex(baseDir, nr, say);
+        rows[nr] = null;
+        if (!nt) continue;
+        if (/\.(csv|tsv)$/i.test(nt.name)) rows[nr] = parseCsvRows(await readItemText(nt));
+        else if (/\.(xlsx|xls)$/i.test(nt.name)) {
+          var npk = getPako(assets);
+          if (npk && XR) rows[nr] = XR.fromBytes(await readItemU8(nt), npk);
+        }
+      }
+    }
 
     // ③ 完整解析
     var res = resolveOnce(rows);

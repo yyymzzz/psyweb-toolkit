@@ -212,6 +212,17 @@
 
     // ① 先只解析 psyexp —— 得到它引用的条件表清单（不需要解 xlsx）
     var phase1 = RC.resolve({ psyexpRel: psyItem.rel, psyexpText: psyText, getTableRows: null });
+    var candidateTables = [];
+    if (!phase1.refs.length && phase1.unresolvedTables.length) {
+      index.forEach(function (it) {
+        if (TABLE_EXT.test(it.name) && !SKIP_DIR.test(it.rel)) {
+          var a = RC.dirName(psyItem.rel).split('/').filter(Boolean), b = it.rel.split('/');
+          while (a.length && b.length && a[0].toLowerCase() === b[0].toLowerCase()) { a.shift(); b.shift(); }
+          candidateTables.push(a.map(function () { return '..'; }).concat(b).join('/'));
+        }
+      });
+      phase1 = RC.resolve({ psyexpText: psyText, candidateTables: candidateTables });
+    }
     var tableRefs = (phase1.tables || []).slice();
     say('   · 主文件 ' + psyItem.rel + '（' + (psyText.length / 1024).toFixed(0) + ' KB）');
     (phase1.notes || []).forEach(function (n) { if (/常量/.test(n)) say('   · ' + n); });
@@ -232,12 +243,29 @@
     }
     var xr = await fetchXlsxRows(xlsxItems);
     Object.keys(xr).forEach(function (k) { rowsCache[k] = xr[k]; });
+    for (var pass = 0; pass < 4; pass++) {
+      var nested = RC.resolve({ psyexpText: psyText, candidateTables: candidateTables,
+        getTableRows: function (rel) { return rowsCache[rel] || null; } }).tables || [];
+      var unread = nested.filter(function (rel) { return rowsCache[rel] === undefined; });
+      if (!unread.length) break;
+      var nestedXlsx = [];
+      for (var ni = 0; ni < unread.length; ni++) {
+        var nr = unread[ni], nt = findInIndex(psyItem.rel, nr, say);
+        rowsCache[nr] = null;
+        if (!nt) continue;
+        if (/\.(csv|tsv)$/i.test(nt.name)) rowsCache[nr] = parseCsvRows(await readItemText(nt));
+        else nestedXlsx.push({ref:nr, it:nt});
+      }
+      var nestedRows = await fetchXlsxRows(nestedXlsx);
+      Object.keys(nestedRows).forEach(function (rel) { rowsCache[rel] = nestedRows[rel]; });
+    }
 
     // ③ 完整解析：exists 用索引精确判定 —— 这一条把"另一个目录同名"的误配挡掉
     var exists = function (ref) { return !!byRel[refToDropped(psyItem.rel, ref).toLowerCase()]; };
     var res = RC.resolve({
       psyexpRel: psyItem.rel,
       psyexpText: psyText,
+      candidateTables: candidateTables,
       getTableRows: function (rel) { return rowsCache[rel] !== undefined ? rowsCache[rel] : null; },
       exists: exists
     });
