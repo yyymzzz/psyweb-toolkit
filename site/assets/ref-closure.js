@@ -559,7 +559,10 @@
       refs: refs,
       constants: consts,
       notes: notes,
-      degraded: (unresolved.length > 0 || tableFailures > 0) && refs.some(function (r) { return r.source === 'dynamic-table-sweep'; }),
+      // 已解析出的表/媒体不能证明另一处动态媒体引用是安全的。
+      // 只要仍有媒体引用未解析，就交给调用方的保守筛选；表列可解析时
+      // unresolved 为空，仍保留条件表反推媒体的精确闭包。
+      degraded: unresolved.length > 0 || (tableFailures > 0 && refs.some(function (r) { return r.source === 'dynamic-table-sweep'; })),
       unresolved: unresolved,
       unresolvedTables: unresolvedTables,
       tables: Object.keys(tableRead)
