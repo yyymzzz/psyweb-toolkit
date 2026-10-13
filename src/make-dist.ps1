@@ -146,7 +146,13 @@ $licLines += ''
 $licLines += '## 说明'
 $licLines += '- 若要**公开分发**本工具，请先补齐上表各组件的许可证原文。'
 $licLines += '- 本工具自身代码：MIT（见仓库 LICENSE）。'
-$licLines += ('- 生成时间：' + (Get-Date -Format 'yyyy-MM-dd HH:mm'))
+# ⚠️ 这里**不能**写 wall-clock 时间：这份文件在 acceptance_dependency_paths() 的依赖集里，
+# 而 C2/C3 的校验器都比对"当前依赖集合 vs 冻结时的哈希"。原先写 `生成时间：yyyy-MM-dd HH:mm`
+# 会让每一次重建分发包都把这一行改掉 → 前一段冻结的快照立刻失效，且永远无法自洽。
+# 实测 2026-10-13：00:56 生成的包记 b0d6832c…，13:44 重建后变 d8947926…，差异只有这一行。
+# 改成依据 vendor.lock.json 的指纹（确定性、可复现，且更有溯源意义）。
+$lockHash = (Get-FileHash -LiteralPath (Join-Path $ROOT 'vendor.lock.json') -Algorithm SHA256).Hash.Substring(0,16).ToLower()
+$licLines += ('- 清单依据：`vendor.lock.json`（SHA256 前16位 `' + $lockHash + '`）')
 $licLines | Out-File -FilePath "$PKG\第三方许可.md" -Encoding UTF8
 Write-Host ("   第三方许可.md  {0} 个组件" -f $lock.count)
 
